@@ -1,3 +1,11 @@
+// Register TypeScript path aliases before any other imports - MUST be first
+require('module-alias/register');
+const moduleAlias = require('module-alias');
+const path = require('path');
+
+// Register @ alias to point to src directory
+moduleAlias.addAlias('@', path.join(process.cwd(), 'src'));
+
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { ExpressAdapter } from '@nestjs/platform-express';
