@@ -54,12 +54,17 @@ export class CmsAdminService {
       ...(isPublished !== undefined ? { isPublished } : {}),
     };
     
+    // Set isActive based on isPublished: if published, make it active immediately
+    // If isPublished is true, set isActive to true; if false or undefined, default to true (Post model default)
+    const isActive = isPublished === true ? true : (postData.isActive !== undefined ? postData.isActive : true);
+    
     // Create the post (isPublished is filtered out since it's not in Prisma schema)
     const post = await this.prisma.post.create({
       data: {
         ...postData,
         userId,
         postType: 'CURRENT_AFFAIRS',
+        isActive,
         metadata: finalMetadata,
       },
     });
@@ -91,11 +96,12 @@ export class CmsAdminService {
     }
 
     // Extract language from top-level if provided, merge into metadata
-    const { metadata, language, ...postData } = data;
+    // Also extract isPublished since it's not in Prisma schema (only isActive exists)
+    const { metadata, language, isPublished, ...postData } = data;
     
     // Build metadata object - merge language from top-level if provided
     let finalMetadata = metadata;
-    if (language || metadata) {
+    if (language || metadata || isPublished !== undefined) {
       const existingPost = await this.prisma.post.findUnique({
         where: { id },
         select: { metadata: true },
@@ -107,6 +113,8 @@ export class CmsAdminService {
         ...metadata,
         // If language is provided at top-level, use it (metadata.language takes precedence if both exist)
         ...(language && !metadata?.language ? { language } : {}),
+        // Update isPublished if provided
+        ...(isPublished !== undefined ? { isPublished } : {}),
       };
     }
 
@@ -160,29 +168,43 @@ export class CmsAdminService {
   }
 
   async createGeneralKnowledge(data: any, userId: string) {
-    // Validate description word count (max 60 words)
+    // Validate description word count (max 60 words) - HTML tags are stripped automatically
     if (data.description) {
       const wordCount = countWords(data.description);
       if (wordCount > 60) {
-        throw new BadRequestException('Description must be 60 words or less');
+        throw new BadRequestException('Description must be 60 words or less (HTML tags are not counted)');
       }
     }
 
-    const { metadata, ...postData } = data;
+    // Extract language from top-level if provided, merge into metadata
+    // Also extract isPublished since it's not in Prisma schema (only isActive exists)
+    const { metadata, language, isPublished, ...postData } = data;
     
-    // Create the post
+    // Build metadata object - merge language from top-level if provided
+    const finalMetadata = {
+      ...(metadata || {}),
+      type: 'GENERAL_KNOWLEDGE',
+      postType: 'General Knowledge',
+      // If language is provided at top-level, use it (metadata.language takes precedence if both exist)
+      ...(language && !metadata?.language ? { language } : {}),
+      // Store articleId in metadata for MCQ linking (will be set after creation)
+      articleId: undefined,
+      // Store isPublished in metadata since it's not a direct field in Post model
+      ...(isPublished !== undefined ? { isPublished } : {}),
+    };
+    
+    // Set isActive based on isPublished: if published, make it active immediately
+    // If isPublished is true, set isActive to true; if false or undefined, default to true (Post model default)
+    const isActive = isPublished === true ? true : (postData.isActive !== undefined ? postData.isActive : true);
+    
+    // Create the post (isPublished is filtered out since it's not in Prisma schema)
     const post = await this.prisma.post.create({
       data: {
         ...postData,
         userId,
         postType: 'COLLEGE_FEED',
-        metadata: {
-          ...(metadata || {}),
-          type: 'GENERAL_KNOWLEDGE',
-          postType: 'General Knowledge',
-          // Store articleId in metadata for MCQ linking
-          articleId: undefined, // Will be set to post.id after creation
-        },
+        isActive,
+        metadata: finalMetadata,
       },
     });
 
@@ -204,29 +226,53 @@ export class CmsAdminService {
   }
 
   async updateGeneralKnowledge(id: string, data: any) {
-    // Validate description word count if provided (max 60 words)
+    // Validate description word count if provided (max 60 words) - HTML tags are stripped automatically
     if (data.description) {
       const wordCount = countWords(data.description);
       if (wordCount > 60) {
-        throw new BadRequestException('Description must be 60 words or less');
+        throw new BadRequestException('Description must be 60 words or less (HTML tags are not counted)');
       }
     }
 
-    const { metadata, ...postData } = data;
-    // Merge metadata if it exists
-    if (metadata) {
-      const existing = await this.prisma.post.findUnique({ where: { id } });
-      const existingMetadata = (existing?.metadata as any) || {};
-      postData.metadata = {
+    // Extract language from top-level if provided, merge into metadata
+    // Also extract isPublished since it's not in Prisma schema (only isActive exists)
+    const { metadata, language, isPublished, ...postData } = data;
+    
+    // Build metadata object - merge language from top-level if provided
+    let finalMetadata = metadata;
+    if (language || metadata || isPublished !== undefined) {
+      const existingPost = await this.prisma.post.findUnique({
+        where: { id },
+        select: { metadata: true },
+      });
+      
+      const existingMetadata = (existingPost?.metadata as any) || {};
+      finalMetadata = {
         ...existingMetadata,
         ...metadata,
         type: 'GENERAL_KNOWLEDGE',
         postType: 'General Knowledge',
+        // If language is provided at top-level, use it (metadata.language takes precedence if both exist)
+        ...(language && !metadata?.language ? { language } : {}),
         // Preserve articleId if it exists
-        articleId: existingMetadata.articleId || existing?.id,
+        articleId: existingMetadata.articleId || existingPost?.id,
+        // Update isPublished if provided
+        ...(isPublished !== undefined ? { isPublished } : {}),
       };
     }
-    return this.prisma.post.update({ where: { id }, data: postData });
+
+    const updateData: any = {
+      ...postData,
+    };
+    
+    if (finalMetadata !== undefined) {
+      updateData.metadata = finalMetadata;
+    }
+
+    return this.prisma.post.update({
+      where: { id },
+      data: updateData,
+    });
   }
 
   async deleteGeneralKnowledge(id: string) {
