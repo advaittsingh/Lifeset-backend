@@ -32,6 +32,7 @@ export class PushNotificationService implements OnModuleInit {
     title: string;
     body: string;
     data?: any;
+    image?: string;
   }) {
     if (!this.firebaseApp) {
       console.warn('Firebase not initialized');
@@ -45,12 +46,16 @@ export class PushNotificationService implements OnModuleInit {
       return { success: false, message: 'No tokens found' };
     }
 
-    const message = {
+    const message: admin.messaging.MulticastMessage = {
       notification: {
         title: notification.title,
         body: notification.body,
+        ...(notification.image && { imageUrl: notification.image }),
       },
-      data: notification.data || {},
+      data: {
+        ...(notification.data || {}),
+        ...(notification.image && { image: notification.image }),
+      },
       tokens: tokens,
     };
 

@@ -1,5 +1,7 @@
-import { Controller, Get, Post, Put, Patch, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { Controller, Get, Post, Put, Patch, Delete, Body, Param, Query, UseGuards, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { Express } from 'express';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -8,6 +10,8 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { CmsAdminService } from '../cms/cms-admin.service';
 import { CreateWallCategoryDto } from '../cms/dto/create-wall-category.dto';
 import { UpdateWallCategoryDto } from '../cms/dto/update-wall-category.dto';
+import { FileService } from '../file/file.service';
+import { CreateNotificationAdminDto } from './dto/create-notification-admin.dto';
 
 @ApiTags('Admin')
 @Controller('admin')
@@ -18,6 +22,7 @@ export class AdminController {
   constructor(
     private prisma: PrismaService,
     private readonly cmsAdminService: CmsAdminService,
+    private readonly fileService: FileService,
   ) {}
 
   // Users Management
@@ -415,25 +420,7 @@ export class AdminController {
   // Notifications
   @Post('notifications')
   @ApiOperation({ summary: 'Send notification (Admin)' })
-  async sendNotification(@Body() data: { 
-    userId?: string; 
-    title: string; 
-    message: string; 
-    type: string; 
-    sendToAll?: boolean;
-    filters?: {
-      userType?: string;
-      collegeId?: string;
-      collegeProfileId?: string;
-      courseId?: string;
-      city?: string;
-      state?: string;
-      isActive?: boolean;
-      isVerified?: boolean;
-      registrationDateFrom?: string;
-      registrationDateTo?: string;
-    };
-  }) {
+  async sendNotification(@Body() data: CreateNotificationAdminDto) {
     const where: any = {};
 
     if (data.sendToAll) {
@@ -494,6 +481,8 @@ export class AdminController {
         title: data.title,
         message: data.message,
         type: data.type as NotificationType,
+        redirectUrl: data.redirectUrl,
+        image: data.image,
       }));
       
       return this.prisma.notification.createMany({
@@ -506,9 +495,40 @@ export class AdminController {
           title: data.title,
           message: data.message,
           type: data.type as NotificationType,
+          redirectUrl: data.redirectUrl,
+          image: data.image,
         },
       });
     }
+  }
+
+  @Post('notifications/upload-image')
+  @UseInterceptors(FileInterceptor('image'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Upload notification image (Admin)' })
+  async uploadNotificationImage(@UploadedFile() file: Express.Multer.File) {
+    if (!file) {
+      throw new Error('No file uploaded');
+    }
+
+    // Validate file type
+    const allowedMimeTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+    if (!allowedMimeTypes.includes(file.mimetype)) {
+      throw new Error('Invalid file type. Only JPEG, PNG, GIF, and WebP images are allowed.');
+    }
+
+    const key = `notifications/${Date.now()}-${file.originalname}`;
+    const result = await this.fileService.uploadFile(
+      file.buffer,
+      key,
+      file.mimetype,
+    );
+
+    return {
+      success: true,
+      image: result.Location,
+      key: result.Key,
+    };
   }
 
   @Get('notifications')

@@ -491,6 +491,8 @@ model Notification {
   type        NotificationType
   isRead      Boolean     @default(false)
   readAt      DateTime?
+  redirectUrl String?     @db.VarChar(500)
+  image       String?     @db.Text
   createdAt   DateTime    @default(now())
 
   user        User        @relation(fields: [userId], references: [id])

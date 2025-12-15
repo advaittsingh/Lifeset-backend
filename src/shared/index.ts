@@ -154,6 +154,8 @@ export interface Notification {
   type: NotificationType;
   isRead: boolean;
   readAt?: Date;
+  redirectUrl?: string;
+  image?: string;
   createdAt: Date;
 }
 
