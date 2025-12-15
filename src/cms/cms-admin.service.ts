@@ -36,12 +36,6 @@ export class CmsAdminService {
       if (wordCount > 60) {
         throw new BadRequestException('Description must be 60 words or less (HTML tags are not counted)');
       }
-      
-      // Validate plain text character count (max 500 characters) - HTML tags are stripped
-      const plainTextLength = countPlainTextCharacters(data.description);
-      if (plainTextLength > 500) {
-        throw new BadRequestException(`Description must be 500 characters or less (plain text only, HTML tags are not counted). Current length: ${plainTextLength} characters`);
-      }
     }
 
     // Extract language from top-level if provided, merge into metadata
@@ -93,12 +87,6 @@ export class CmsAdminService {
       const wordCount = countWords(data.description);
       if (wordCount > 60) {
         throw new BadRequestException('Description must be 60 words or less (HTML tags are not counted)');
-      }
-      
-      // Validate plain text character count (max 500 characters) - HTML tags are stripped
-      const plainTextLength = countPlainTextCharacters(data.description);
-      if (plainTextLength > 500) {
-        throw new BadRequestException(`Description must be 500 characters or less (plain text only, HTML tags are not counted). Current length: ${plainTextLength} characters`);
       }
     }
 
