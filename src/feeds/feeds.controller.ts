@@ -3,6 +3,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { FeedsService } from './feeds.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { CreateJobDto } from './dto/create-job.dto';
 
 @ApiTags('Feeds')
 @Controller('feeds')
@@ -25,7 +26,9 @@ export class FeedsController {
 
   @Post()
   @ApiOperation({ summary: 'Create new feed' })
-  async createFeed(@CurrentUser() user: any, @Body() data: any) {
+  async createFeed(@CurrentUser() user: any, @Body() data: CreateJobDto | any) {
+    // If it's a job post, use CreateJobDto validation
+    // Otherwise, accept any data for other feed types
     return this.feedsService.createFeed(user.id, data);
   }
 

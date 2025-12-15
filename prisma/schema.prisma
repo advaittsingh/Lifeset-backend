@@ -246,14 +246,26 @@ model Post {
 }
 
 model WallCategory {
-  id          String   @id @default(uuid())
-  name        String
-  description String?  @db.Text
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id              String   @id @default(uuid())
+  name            String
+  description     String?  @db.Text
+  categoryFor     String?  // e.g., "Posts", "Events", "Jobs"
+  parentCategoryId String?  // Self-referential foreign key for sub-categories
+  isActive        Boolean  @default(true)
+  postCount       Int      @default(0) // Count of posts using this category
+  metadata        Json?    // Optional: for storing additional structured data
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  posts       Post[]
+  // Self-referential relationship
+  parent          WallCategory? @relation("CategoryHierarchy", fields: [parentCategoryId], references: [id], onDelete: Cascade)
+  subCategories   WallCategory[] @relation("CategoryHierarchy")
+
+  posts           Post[]
+
+  @@index([parentCategoryId])
+  @@index([isActive])
+  @@index([categoryFor])
 }
 
 model JobPost {
@@ -845,12 +857,16 @@ model McqQuestion {
   explanation   String?  @db.Text
   difficulty    String   // easy, medium, hard
   tags          String[]
+  articleId     String?  // Link to GK/CA article (Post ID)
+  metadata      Json?    // Additional metadata (articleId, category, subCategory, section, country)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
   category      McqCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   attempts      McqAttempt[]
   bookmarks     McqBookmark[]
+
+  @@index([articleId])
 }
 
 model McqAttempt {

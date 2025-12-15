@@ -6,6 +6,10 @@ import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { UserType } from '@/shared';
+import { CreateArticleDto } from './dto/create-article.dto';
+import { CreateMcqDto } from './dto/create-mcq.dto';
+import { CreateWallCategoryDto } from './dto/create-wall-category.dto';
+import { UpdateWallCategoryDto } from './dto/update-wall-category.dto';
 
 @ApiTags('CMS Admin')
 @Controller('admin/cms')
@@ -24,7 +28,7 @@ export class CmsAdminController {
 
   @Post('current-affairs')
   @ApiOperation({ summary: 'Create current affair (Admin)' })
-  async createCurrentAffair(@CurrentUser() user: any, @Body() data: any) {
+  async createCurrentAffair(@CurrentUser() user: any, @Body() data: CreateArticleDto) {
     return this.cmsAdminService.createCurrentAffair(data, user.id);
   }
 
@@ -49,7 +53,7 @@ export class CmsAdminController {
 
   @Post('general-knowledge')
   @ApiOperation({ summary: 'Create general knowledge article (Admin)' })
-  async createGeneralKnowledge(@CurrentUser() user: any, @Body() data: any) {
+  async createGeneralKnowledge(@CurrentUser() user: any, @Body() data: CreateArticleDto) {
     return this.cmsAdminService.createGeneralKnowledge(data, user.id);
   }
 
@@ -74,8 +78,23 @@ export class CmsAdminController {
 
   @Post('mcq/questions')
   @ApiOperation({ summary: 'Create MCQ question (Admin)' })
-  async createMcqQuestion(@Body() data: any) {
-    return this.cmsAdminService.createMcqQuestion(data);
+  async createMcqQuestion(@Body() data: CreateMcqDto) {
+    // Transform DTO to service format
+    const mcqData = {
+      question: data.question,
+      options: data.options,
+      correctAnswer: data.correctAnswer,
+      categoryId: data.categoryId,
+      explanation: data.explanation,
+      difficulty: data.difficulty || 'medium',
+      tags: data.tags || [],
+      articleId: data.articleId,
+      metadata: data.metadata ? {
+        ...data.metadata,
+        articleId: data.articleId || data.metadata.articleId,
+      } : (data.articleId ? { articleId: data.articleId } : undefined),
+    };
+    return this.cmsAdminService.createMcqQuestion(mcqData);
   }
 
   @Put('mcq/questions/:id')
@@ -306,21 +325,50 @@ export class CmsAdminController {
 
   // ========== Wall Categories ==========
   @Get('wall-categories')
-  @ApiOperation({ summary: 'Get wall categories (Admin)' })
-  async getWallCategories() {
-    return this.cmsAdminService.getWallCategories();
+  @ApiOperation({ summary: 'Get wall categories (Admin). Use ?parentId=xxx to get sub-categories, ?onlyParents=false to get all' })
+  async getWallCategories(@Query() filters: { parentId?: string; categoryFor?: string; onlyParents?: string }) {
+    const categories = await this.cmsAdminService.getWallCategories({
+      parentId: filters.parentId,
+      categoryFor: filters.categoryFor,
+      onlyParents: filters.onlyParents !== 'false', // Default to true (only parents)
+    });
+    return {
+      success: true,
+      data: categories,
+    };
+  }
+
+  @Get('wall-categories/:id/sub-categories')
+  @ApiOperation({ summary: 'Get sub-categories of a specific parent category (Admin)' })
+  async getSubCategories(@Param('id') parentId: string) {
+    const categories = await this.cmsAdminService.getWallCategories({
+      parentId,
+      onlyParents: false,
+    });
+    return {
+      success: true,
+      data: categories,
+    };
   }
 
   @Post('wall-categories')
   @ApiOperation({ summary: 'Create wall category (Admin)' })
-  async createWallCategory(@Body() data: any) {
-    return this.cmsAdminService.createWallCategory(data);
+  async createWallCategory(@Body() data: CreateWallCategoryDto) {
+    const category = await this.cmsAdminService.createWallCategory(data);
+    return {
+      success: true,
+      data: category,
+    };
   }
 
   @Put('wall-categories/:id')
   @ApiOperation({ summary: 'Update wall category (Admin)' })
-  async updateWallCategory(@Param('id') id: string, @Body() data: any) {
-    return this.cmsAdminService.updateWallCategory(id, data);
+  async updateWallCategory(@Param('id') id: string, @Body() data: UpdateWallCategoryDto) {
+    const category = await this.cmsAdminService.updateWallCategory(id, data);
+    return {
+      success: true,
+      data: category,
+    };
   }
 
   @Delete('wall-categories/:id')

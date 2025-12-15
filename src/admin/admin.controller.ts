@@ -5,6 +5,9 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { UserType, NotificationType } from '@/shared';
 import { PrismaService } from '../common/prisma/prisma.service';
+import { CmsAdminService } from '../cms/cms-admin.service';
+import { CreateWallCategoryDto } from '../cms/dto/create-wall-category.dto';
+import { UpdateWallCategoryDto } from '../cms/dto/update-wall-category.dto';
 
 @ApiTags('Admin')
 @Controller('admin')
@@ -12,7 +15,10 @@ import { PrismaService } from '../common/prisma/prisma.service';
 @ApiBearerAuth()
 @Roles(UserType.ADMIN)
 export class AdminController {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly cmsAdminService: CmsAdminService,
+  ) {}
 
   // Users Management
   @Get('users')
@@ -929,75 +935,64 @@ export class AdminController {
     }
   }
 
-  // Wall Categories Management
+  // Wall Categories Management (parent/sub-category aware)
   @Get('wall-categories')
-  @ApiOperation({ summary: 'Get all wall categories (Admin)' })
-  async getWallCategories() {
-    const categories = await this.prisma.wallCategory.findMany({
-      include: {
-        _count: {
-          select: {
-            posts: true,
-          },
-        },
-      },
-      orderBy: { name: 'asc' },
+  @ApiOperation({ summary: 'Get wall categories (Admin). Default returns only parent categories. Use ?parentId=xxx to get sub-categories, ?onlyParents=false to get all' })
+  async getWallCategories(@Query() filters: { parentId?: string; categoryFor?: string; onlyParents?: string }) {
+    // Default behavior: only return parent categories (parentCategoryId IS NULL)
+    // Explicitly set to true if not provided or not explicitly 'false'
+    const onlyParents = filters.onlyParents === undefined || filters.onlyParents !== 'false';
+    
+    const categories = await this.cmsAdminService.getWallCategories({
+      parentId: filters.parentId,
+      categoryFor: filters.categoryFor,
+      onlyParents: onlyParents,
     });
 
-    return categories.map((cat) => ({
-      ...cat,
-      postCount: cat._count.posts,
-    }));
+    return {
+      success: true,
+      data: categories,
+    };
+  }
+
+  @Get('wall-categories/:id/sub-categories')
+  @ApiOperation({ summary: 'Get sub-categories of a specific parent category (Admin)' })
+  async getSubCategories(@Param('id') parentId: string) {
+    const categories = await this.cmsAdminService.getWallCategories({
+      parentId,
+      onlyParents: false,
+    });
+
+    return {
+      success: true,
+      data: categories,
+    };
   }
 
   @Post('wall-categories')
   @ApiOperation({ summary: 'Create wall category (Admin)' })
-  async createWallCategory(@Body() data: { name: string; description?: string; categoryFor?: string; parentCategoryId?: string; isActive?: boolean }) {
-    // Note: parentCategoryId and categoryFor would need schema changes to support
-    // Currently, WallCategory model doesn't have a metadata field in the schema
-    return this.prisma.wallCategory.create({
-      data: {
-        name: data.name,
-        description: data.description,
-        isActive: data.isActive !== undefined ? data.isActive : true,
-      },
-    });
+  async createWallCategory(@Body() data: CreateWallCategoryDto) {
+    const category = await this.cmsAdminService.createWallCategory(data);
+    return {
+      success: true,
+      data: category,
+    };
   }
 
   @Put('wall-categories/:id')
   @ApiOperation({ summary: 'Update wall category (Admin)' })
-  async updateWallCategory(@Param('id') id: string, @Body() data: { name?: string; description?: string; categoryFor?: string; parentCategoryId?: string; isActive?: boolean }) {
-    const updateData: any = {};
-    if (data.name !== undefined) updateData.name = data.name;
-    if (data.description !== undefined) updateData.description = data.description;
-    if (data.isActive !== undefined) updateData.isActive = data.isActive;
-    
-    // Note: categoryFor and parentCategoryId would need schema changes to support
-    // Currently, WallCategory model doesn't have a metadata field in the schema
-    // These fields are ignored for now
-
-    return this.prisma.wallCategory.update({
-      where: { id },
-      data: updateData,
-    });
+  async updateWallCategory(@Param('id') id: string, @Body() data: UpdateWallCategoryDto) {
+    const category = await this.cmsAdminService.updateWallCategory(id, data);
+    return {
+      success: true,
+      data: category,
+    };
   }
 
   @Delete('wall-categories/:id')
   @ApiOperation({ summary: 'Delete wall category (Admin)' })
   async deleteWallCategory(@Param('id') id: string) {
-    // Check if category has posts
-    const category = await this.prisma.wallCategory.findUnique({
-      where: { id },
-      include: { _count: { select: { posts: true } } },
-    });
-
-    if (category?._count.posts > 0) {
-      throw new Error('Cannot delete category with existing posts. Please reassign or delete posts first.');
-    }
-
-    return this.prisma.wallCategory.delete({
-      where: { id },
-    });
+    return this.cmsAdminService.deleteWallCategory(id);
   }
 }
 

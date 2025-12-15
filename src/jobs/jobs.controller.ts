@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { JobsService } from './jobs.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -49,6 +49,14 @@ export class JobsController {
   @ApiOperation({ summary: 'Shortlist candidate' })
   async shortlistCandidate(@Param('id') id: string, @Body() data: { status: string }) {
     return this.jobsService.shortlistCandidate(id, data.status);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete(':id')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Delete job (soft delete)' })
+  async deleteJob(@Param('id') id: string) {
+    return this.jobsService.deleteJob(id);
   }
 }
 

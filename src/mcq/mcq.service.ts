@@ -16,6 +16,7 @@ export class McqService {
     categoryId?: string;
     difficulty?: string;
     tags?: string[];
+    articleId?: string; // Support filtering by articleId
     page?: number;
     limit?: number;
   }) {
@@ -35,6 +36,10 @@ export class McqService {
 
     if (filters.tags && filters.tags.length > 0) {
       where.tags = { hasSome: filters.tags };
+    }
+
+    if (filters.articleId) {
+      where.articleId = filters.articleId;
     }
 
     const [questions, total] = await Promise.all([

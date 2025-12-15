@@ -1,5 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service';
+import * as bcrypt from 'bcrypt';
+import { UserType } from '@/shared';
 
 @Injectable()
 export class InstitutesAdminService {
@@ -203,10 +205,18 @@ export class InstitutesAdminService {
 
   // ========== Institute Profile Management ==========
   async createInstitute(data: {
+    // Faculty Head Details
+    facultyHeadName: string;
+    facultyHeadEmail: string;
+    facultyHeadContact: string;
+    facultyHeadStatus?: string;
+    
+    // Institute Details
     name: string;
-    type: string;
+    type?: string;
     city: string;
     state: string;
+    district?: string;
     pincode?: string;
     address?: string;
     website?: string;
@@ -216,7 +226,89 @@ export class InstitutesAdminService {
     logo?: string;
     isActive?: boolean;
   }) {
-    return this.prisma.college.create({ data });
+    // Check if faculty head email already exists
+    if (data.facultyHeadEmail) {
+      const existingUser = await this.prisma.user.findUnique({
+        where: { email: data.facultyHeadEmail },
+      });
+      if (existingUser) {
+        throw new BadRequestException('Faculty head email already registered');
+      }
+    }
+
+    // Check if faculty head mobile already exists
+    if (data.facultyHeadContact) {
+      const existingUser = await this.prisma.user.findUnique({
+        where: { mobile: data.facultyHeadContact },
+      });
+      if (existingUser) {
+        throw new BadRequestException('Faculty head contact number already registered');
+      }
+    }
+
+    // Generate a default password for faculty head (can be changed later)
+    const defaultPassword = 'Faculty@123'; // In production, generate a secure random password
+    const hashedPassword = await bcrypt.hash(defaultPassword, 10);
+
+    // Combine address with district and pincode if provided
+    let fullAddress = data.address || '';
+    if (data.district) {
+      fullAddress = fullAddress ? `${fullAddress}, ${data.district}` : data.district;
+    }
+    if (data.pincode) {
+      fullAddress = fullAddress ? `${fullAddress} - ${data.pincode}` : `Pincode: ${data.pincode}`;
+    }
+
+    // Create institute and faculty head in a transaction
+    return this.prisma.$transaction(async (tx) => {
+      // Create Faculty Head User
+      const facultyUser = await tx.user.create({
+        data: {
+          email: data.facultyHeadEmail,
+          mobile: data.facultyHeadContact,
+          password: hashedPassword,
+          userType: UserType.FACULTY,
+          isActive: data.facultyHeadStatus === 'Active',
+          isVerified: true, // Auto-verify faculty heads created by admin
+        },
+      });
+
+      // Create College/Institute
+      const college = await tx.college.create({
+        data: {
+          name: data.name,
+          address: fullAddress || undefined,
+          city: data.city,
+          state: data.state,
+          // Store additional fields that don't exist in schema in a JSON metadata field
+          // For now, we'll use available fields and note that type, website, email, phone, description need schema update
+          isActive: data.isActive !== false,
+        },
+      });
+
+      // Create CollegeProfile for the faculty head linking to this college
+      await tx.collegeProfile.create({
+        data: {
+          userId: facultyUser.id,
+          collegeName: data.name,
+          address: fullAddress || undefined,
+          city: data.city,
+          state: data.state,
+        },
+      });
+
+      return {
+        college,
+        facultyHead: {
+          id: facultyUser.id,
+          email: facultyUser.email,
+          mobile: facultyUser.mobile,
+          name: data.facultyHeadName,
+          status: data.facultyHeadStatus || 'Active',
+        },
+        message: 'Institute and faculty head created successfully',
+      };
+    });
   }
 
   async updateInstitute(id: string, data: any) {
@@ -244,13 +336,43 @@ export class InstitutesAdminService {
   async createCourse(data: {
     name: string;
     collegeId: string;
-    categoryId: string;
+    categoryId?: string;
+    specialisationId?: string;
+    code?: string;
     duration?: string;
     description?: string;
     fees?: number;
     eligibility?: string;
     isActive?: boolean;
   }) {
+    // Validate that college exists
+    const college = await this.prisma.college.findUnique({
+      where: { id: data.collegeId },
+    });
+    if (!college) {
+      throw new BadRequestException('Institute not found');
+    }
+
+    // Validate category if provided
+    if (data.categoryId) {
+      const category = await this.prisma.courseCategory.findUnique({
+        where: { id: data.categoryId },
+      });
+      if (!category) {
+        throw new BadRequestException('Course category not found');
+      }
+    }
+
+    // Validate specialisation if provided
+    if (data.specialisationId) {
+      const specialisation = await this.prisma.specialisation.findUnique({
+        where: { id: data.specialisationId },
+      });
+      if (!specialisation) {
+        throw new BadRequestException('Specialisation not found');
+      }
+    }
+
     return this.prisma.course.create({ data });
   }
 

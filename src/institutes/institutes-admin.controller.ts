@@ -5,6 +5,8 @@ import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { UserType } from '@/shared';
+import { CreateInstituteDto } from './dto/create-institute.dto';
+import { CreateCourseDto } from './dto/create-course.dto';
 
 @ApiTags('Institutes Admin')
 @Controller('admin/institutes')
@@ -103,9 +105,15 @@ export class InstitutesAdminController {
   }
 
   // ========== Institute Management ==========
+  @Get()
+  @ApiOperation({ summary: 'Get all institutes (Admin)' })
+  async getInstitutes(@Query() filters: any) {
+    return this.institutesAdminService.searchInstitutes(filters);
+  }
+
   @Post()
   @ApiOperation({ summary: 'Create institute (Admin)' })
-  async createInstitute(@Body() data: any) {
+  async createInstitute(@Body() data: CreateInstituteDto) {
     return this.institutesAdminService.createInstitute(data);
   }
 
@@ -130,7 +138,7 @@ export class InstitutesAdminController {
   // ========== Course Management ==========
   @Post(':id/courses')
   @ApiOperation({ summary: 'Create course for institute (Admin)' })
-  async createCourse(@Param('id') instituteId: string, @Body() data: any) {
+  async createCourse(@Param('id') instituteId: string, @Body() data: CreateCourseDto) {
     return this.institutesAdminService.createCourse({
       ...data,
       collegeId: instituteId,

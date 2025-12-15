@@ -197,5 +197,76 @@ export class JobsService {
       data: { status },
     });
   }
+
+  async deleteJob(id: string) {
+    // Try to find as JobPost ID first
+    let jobPost = await this.prisma.jobPost.findUnique({
+      where: { id },
+      include: { post: true },
+    });
+
+    let postId: string;
+
+    if (jobPost) {
+      // Found as JobPost ID
+      postId = jobPost.postId;
+    } else {
+      // Try to find as Post ID with postType='JOB'
+      const post = await this.prisma.post.findUnique({
+        where: { id },
+      });
+
+      if (!post) {
+        throw new NotFoundException('Job not found');
+      }
+
+      if (post.postType !== 'JOB') {
+        throw new NotFoundException('Post is not a job');
+      }
+
+      postId = post.id;
+    }
+
+    // Soft delete by setting isActive=false
+    return this.prisma.post.update({
+      where: { id: postId },
+      data: { isActive: false },
+    });
+  }
+
+  async hardDeleteJob(id: string) {
+    // Try to find as JobPost ID first
+    let jobPost = await this.prisma.jobPost.findUnique({
+      where: { id },
+      include: { post: true },
+    });
+
+    let postId: string;
+
+    if (jobPost) {
+      // Found as JobPost ID
+      postId = jobPost.postId;
+    } else {
+      // Try to find as Post ID with postType='JOB'
+      const post = await this.prisma.post.findUnique({
+        where: { id },
+      });
+
+      if (!post) {
+        throw new NotFoundException('Job not found');
+      }
+
+      if (post.postType !== 'JOB') {
+        throw new NotFoundException('Post is not a job');
+      }
+
+      postId = post.id;
+    }
+
+    // Hard delete the Post (this will cascade delete JobPost and all related records)
+    return this.prisma.post.delete({
+      where: { id: postId },
+    });
+  }
 }
 
