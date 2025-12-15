@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException, NotFoundException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service';
-import { countWords } from '../common/utils/validation.helpers';
+import { countWords, countPlainTextCharacters } from '../common/utils/validation.helpers';
 import { updateCategoryPostCount } from '../common/utils/category.helpers';
 import { Prisma } from '@prisma/client';
 
@@ -30,15 +30,32 @@ export class CmsAdminService {
   }
 
   async createCurrentAffair(data: any, userId: string) {
-    // Validate description word count (max 60 words)
+    // Validate description word count (max 60 words) - HTML tags are stripped automatically
     if (data.description) {
       const wordCount = countWords(data.description);
       if (wordCount > 60) {
-        throw new BadRequestException('Description must be 60 words or less');
+        throw new BadRequestException('Description must be 60 words or less (HTML tags are not counted)');
+      }
+      
+      // Validate plain text character count (max 500 characters) - HTML tags are stripped
+      const plainTextLength = countPlainTextCharacters(data.description);
+      if (plainTextLength > 500) {
+        throw new BadRequestException(`Description must be 500 characters or less (plain text only, HTML tags are not counted). Current length: ${plainTextLength} characters`);
       }
     }
 
-    const { metadata, ...postData } = data;
+    // Extract language from top-level if provided, merge into metadata
+    const { metadata, language, ...postData } = data;
+    
+    // Build metadata object - merge language from top-level if provided
+    const finalMetadata = {
+      ...(metadata || {}),
+      postType: 'Current Affairs',
+      // If language is provided at top-level, use it (metadata.language takes precedence if both exist)
+      ...(language && !metadata?.language ? { language } : {}),
+      // Store articleId in metadata for MCQ linking (will be set after creation)
+      articleId: undefined,
+    };
     
     // Create the post
     const post = await this.prisma.post.create({
@@ -46,14 +63,7 @@ export class CmsAdminService {
         ...postData,
         userId,
         postType: 'CURRENT_AFFAIRS',
-        metadata: metadata ? {
-          ...metadata,
-          postType: 'Current Affairs',
-          // Store articleId in metadata for MCQ linking
-          articleId: undefined, // Will be set to post.id after creation
-        } : {
-          postType: 'Current Affairs',
-        },
+        metadata: finalMetadata,
       },
     });
 
@@ -75,28 +85,52 @@ export class CmsAdminService {
   }
 
   async updateCurrentAffair(id: string, data: any) {
-    // Validate description word count if provided (max 60 words)
+    // Validate description word count if provided (max 60 words) - HTML tags are stripped automatically
     if (data.description) {
       const wordCount = countWords(data.description);
       if (wordCount > 60) {
-        throw new BadRequestException('Description must be 60 words or less');
+        throw new BadRequestException('Description must be 60 words or less (HTML tags are not counted)');
+      }
+      
+      // Validate plain text character count (max 500 characters) - HTML tags are stripped
+      const plainTextLength = countPlainTextCharacters(data.description);
+      if (plainTextLength > 500) {
+        throw new BadRequestException(`Description must be 500 characters or less (plain text only, HTML tags are not counted). Current length: ${plainTextLength} characters`);
       }
     }
 
-    const { metadata, ...postData } = data;
-    // Merge metadata if it exists
-    if (metadata) {
-      const existing = await this.prisma.post.findUnique({ where: { id } });
-      const existingMetadata = (existing?.metadata as any) || {};
-      postData.metadata = {
+    // Extract language from top-level if provided, merge into metadata
+    const { metadata, language, ...postData } = data;
+    
+    // Build metadata object - merge language from top-level if provided
+    let finalMetadata = metadata;
+    if (language || metadata) {
+      const existingPost = await this.prisma.post.findUnique({
+        where: { id },
+        select: { metadata: true },
+      });
+      
+      const existingMetadata = (existingPost?.metadata as any) || {};
+      finalMetadata = {
         ...existingMetadata,
         ...metadata,
-        postType: 'Current Affairs',
-        // Preserve articleId if it exists
-        articleId: existingMetadata.articleId || existing?.id,
+        // If language is provided at top-level, use it (metadata.language takes precedence if both exist)
+        ...(language && !metadata?.language ? { language } : {}),
       };
     }
-    return this.prisma.post.update({ where: { id }, data: postData });
+
+    const updateData: any = {
+      ...postData,
+    };
+    
+    if (finalMetadata !== undefined) {
+      updateData.metadata = finalMetadata;
+    }
+
+    return this.prisma.post.update({
+      where: { id },
+      data: updateData,
+    });
   }
 
   async deleteCurrentAffair(id: string) {

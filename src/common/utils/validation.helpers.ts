@@ -1,13 +1,29 @@
 /**
+ * Strip HTML tags from text
+ */
+export function stripHtmlTags(text: string): string {
+  if (!text) return '';
+  return text.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+/**
  * Count words in a string (strips HTML tags first)
  */
 export function countWords(text: string): number {
   if (!text) return 0;
   // Strip HTML tags
-  const stripped = text.replace(/<[^>]*>/g, ' ');
+  const stripped = stripHtmlTags(text);
   // Split by whitespace and filter empty strings
-  const words = stripped.trim().split(/\s+/).filter(word => word.length > 0);
+  const words = stripped.split(/\s+/).filter(word => word.length > 0);
   return words.length;
+}
+
+/**
+ * Count plain text characters (strips HTML tags first)
+ */
+export function countPlainTextCharacters(text: string): number {
+  if (!text) return 0;
+  return stripHtmlTags(text).length;
 }
 
 /**

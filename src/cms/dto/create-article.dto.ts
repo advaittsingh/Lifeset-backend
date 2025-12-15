@@ -1,19 +1,17 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsOptional, IsBoolean, IsArray, IsObject, ValidateNested, IsDateString, IsNumber, Min, Max, MaxLength } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsBoolean, IsArray, IsObject, ValidateNested, IsDateString, IsNumber, Min, Max, MaxLength, ValidateIf } from 'class-validator';
 import { Type } from 'class-transformer';
 
 class LocationDto {
-  @ApiProperty({ description: 'Latitude', example: 28.6139 })
-  @IsNumber()
-  @Min(-90)
-  @Max(90)
-  lat: number;
+  @ApiProperty({ description: 'Latitude (as string)', example: '28.6139' })
+  @IsString()
+  @IsOptional()
+  lat?: string;
 
-  @ApiProperty({ description: 'Longitude', example: 77.2090 })
-  @IsNumber()
-  @Min(-180)
-  @Max(180)
-  long: number;
+  @ApiProperty({ description: 'Longitude (as string)', example: '77.2090' })
+  @IsString()
+  @IsOptional()
+  long?: string;
 }
 
 class ArticleMetadataDto {
@@ -27,10 +25,20 @@ class ArticleMetadataDto {
   @IsOptional()
   category?: string;
 
-  @ApiProperty({ description: 'Sub category', required: false })
+  @ApiProperty({ description: 'Sub category ID (UUID)', required: false })
+  @IsString()
+  @IsOptional()
+  subCategoryId?: string;
+
+  @ApiProperty({ description: 'Sub category name', required: false })
   @IsString()
   @IsOptional()
   subCategory?: string;
+
+  @ApiProperty({ description: 'Chapter ID (UUID)', required: false })
+  @IsString()
+  @IsOptional()
+  chapterId?: string;
 
   @ApiProperty({ description: 'Section', required: false })
   @IsString()
@@ -46,6 +54,11 @@ class ArticleMetadataDto {
   @IsString()
   @IsOptional()
   postType?: string;
+
+  @ApiProperty({ description: 'Language (ENGLISH | HINDI)', required: false })
+  @IsString()
+  @IsOptional()
+  language?: string;
 
   @ApiProperty({ description: 'Headline', required: false })
   @IsString()
@@ -127,11 +140,16 @@ export class CreateArticleDto {
   @IsNotEmpty()
   title: string;
 
-  @ApiProperty({ description: 'Article description (max 60 words)' })
+  @ApiProperty({ description: 'Article description (max 60 words, max 500 plain text characters)' })
   @IsString()
   @IsNotEmpty()
-  @MaxLength(500) // Approximate max for 60 words
+  // Note: Character validation is done in service after stripping HTML
   description: string;
+
+  @ApiProperty({ description: 'Language (ENGLISH | HINDI)', required: false })
+  @IsString()
+  @IsOptional()
+  language?: string;
 
   @ApiProperty({ description: 'Category ID', required: false })
   @IsString()

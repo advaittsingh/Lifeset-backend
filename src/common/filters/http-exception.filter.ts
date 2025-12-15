@@ -31,12 +31,40 @@ export class HttpExceptionFilter implements ExceptionFilter {
         message = exceptionResponse;
       } else if (typeof exceptionResponse === 'object' && exceptionResponse !== null) {
         const responseObj = exceptionResponse as any;
-        message = responseObj.message || exception.message || 'An error occurred';
-        // If message is an array (validation errors), join them
-        if (Array.isArray(message)) {
-          message = message.join(', ');
+        let rawMessage = responseObj.message || exception.message || 'An error occurred';
+        
+        // If message is an array (validation errors), format them nicely
+        if (Array.isArray(rawMessage)) {
+          // Filter out empty messages and format validation errors
+          const formattedMessages = rawMessage
+            .filter((msg: any) => msg && msg.trim())
+            .map((msg: any) => {
+              // Handle nested validation errors (e.g., "metadata.property language")
+              if (typeof msg === 'string') {
+                // Replace "property X should not exist" with more user-friendly messages
+                if (msg.includes('should not exist')) {
+                  return msg.replace(/property (.+) should not exist/i, 'Field "$1" is not allowed');
+                }
+                // Replace "must be" with more user-friendly messages
+                if (msg.includes('must be')) {
+                  return msg;
+                }
+                return msg;
+              }
+              return String(msg);
+            });
+          message = formattedMessages.length > 0 
+            ? formattedMessages.join('. ') 
+            : 'Validation failed';
+        } else {
+          message = rawMessage;
         }
-        details = responseObj;
+        
+        // Include full details for debugging, but ensure message is user-friendly
+        details = {
+          ...responseObj,
+          message: Array.isArray(rawMessage) ? rawMessage : [rawMessage],
+        };
       } else {
         message = exception.message || 'An error occurred';
       }
