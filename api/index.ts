@@ -87,8 +87,8 @@ async function createApp(): Promise<express.Application> {
       allowedHeaders: ['Content-Type', 'Authorization'],
     });
 
-    // Global prefix - remove /api since Vercel routing already handles it
-    const apiPrefix = process.env.API_PREFIX || '/v1';
+    // Global prefix - keep consistent with local NestJS setup (defaults to '/api/v1')
+    const apiPrefix = process.env.API_PREFIX || '/api/v1';
     app.setGlobalPrefix(apiPrefix);
 
     // Global validation pipe
