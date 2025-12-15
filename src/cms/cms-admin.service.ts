@@ -243,7 +243,7 @@ export class CmsAdminService {
     if (language || metadata || isPublished !== undefined) {
       const existingPost = await this.prisma.post.findUnique({
         where: { id },
-        select: { metadata: true },
+        select: { metadata: true, id: true },
       });
       
       const existingMetadata = (existingPost?.metadata as any) || {};
@@ -254,8 +254,8 @@ export class CmsAdminService {
         postType: 'General Knowledge',
         // If language is provided at top-level, use it (metadata.language takes precedence if both exist)
         ...(language && !metadata?.language ? { language } : {}),
-        // Preserve articleId if it exists
-        articleId: existingMetadata.articleId || existingPost?.id,
+        // Preserve articleId if it exists, otherwise use post id
+        articleId: existingMetadata.articleId || existingPost?.id || id,
         // Update isPublished if provided
         ...(isPublished !== undefined ? { isPublished } : {}),
       };
