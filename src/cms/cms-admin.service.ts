@@ -1162,4 +1162,261 @@ export class CmsAdminService {
       message: 'Category deleted successfully',
     };
   }
+
+  // ========== Chapters ==========
+  async getChapters(filters?: { subCategoryId?: string; isActive?: boolean }) {
+    try {
+      const where: any = {};
+      
+      if (filters?.subCategoryId) {
+        where.subCategoryId = filters.subCategoryId;
+      }
+      
+      if (filters?.isActive !== undefined) {
+        where.isActive = filters.isActive;
+      }
+
+      const chapters = await this.prisma.chapter.findMany({
+        where,
+        include: {
+          subCategory: {
+            select: {
+              id: true,
+              name: true,
+              parentCategoryId: true,
+            },
+          },
+        },
+        orderBy: [
+          { order: 'asc' },
+          { createdAt: 'asc' },
+        ],
+      });
+
+      return chapters.map((chapter) => ({
+        id: chapter.id,
+        name: chapter.name,
+        description: chapter.description,
+        subCategoryId: chapter.subCategoryId,
+        subCategory: chapter.subCategory,
+        isActive: chapter.isActive,
+        order: chapter.order,
+        metadata: chapter.metadata,
+        createdAt: chapter.createdAt,
+        updatedAt: chapter.updatedAt,
+      }));
+    } catch (error: any) {
+      console.error('Error fetching chapters:', error);
+      throw new BadRequestException(`Failed to fetch chapters: ${error.message}`);
+    }
+  }
+
+  async getChapterById(id: string) {
+    try {
+      const chapter = await this.prisma.chapter.findUnique({
+        where: { id },
+        include: {
+          subCategory: {
+            select: {
+              id: true,
+              name: true,
+              parentCategoryId: true,
+            },
+          },
+        },
+      });
+
+      if (!chapter) {
+        throw new NotFoundException('Chapter not found');
+      }
+
+      return {
+        id: chapter.id,
+        name: chapter.name,
+        description: chapter.description,
+        subCategoryId: chapter.subCategoryId,
+        subCategory: chapter.subCategory,
+        isActive: chapter.isActive,
+        order: chapter.order,
+        metadata: chapter.metadata,
+        createdAt: chapter.createdAt,
+        updatedAt: chapter.updatedAt,
+      };
+    } catch (error: any) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      console.error('Error fetching chapter:', error);
+      throw new BadRequestException(`Failed to fetch chapter: ${error.message}`);
+    }
+  }
+
+  async createChapter(data: any) {
+    try {
+      // Validate that subCategoryId exists and is a sub-category (has a parent)
+      const subCategory = await this.prisma.wallCategory.findUnique({
+        where: { id: data.subCategoryId },
+        select: {
+          id: true,
+          name: true,
+          parentCategoryId: true,
+        },
+      });
+
+      if (!subCategory) {
+        throw new NotFoundException('Sub-category not found');
+      }
+
+      // Ensure it's actually a sub-category (has a parent)
+      if (!subCategory.parentCategoryId) {
+        throw new BadRequestException('Chapters can only be created under sub-categories. The provided category is a parent category.');
+      }
+
+      // If order is not provided, set it to the next available order
+      let order = data.order;
+      if (order === undefined || order === null) {
+        const maxOrder = await this.prisma.chapter.findFirst({
+          where: { subCategoryId: data.subCategoryId },
+          orderBy: { order: 'desc' },
+          select: { order: true },
+        });
+        order = maxOrder ? maxOrder.order + 1 : 0;
+      }
+
+      const chapter = await this.prisma.chapter.create({
+        data: {
+          name: data.name,
+          description: data.description,
+          subCategoryId: data.subCategoryId,
+          isActive: data.isActive !== undefined ? data.isActive : true,
+          order: order,
+          metadata: data.metadata,
+        },
+        include: {
+          subCategory: {
+            select: {
+              id: true,
+              name: true,
+              parentCategoryId: true,
+            },
+          },
+        },
+      });
+
+      return {
+        id: chapter.id,
+        name: chapter.name,
+        description: chapter.description,
+        subCategoryId: chapter.subCategoryId,
+        subCategory: chapter.subCategory,
+        isActive: chapter.isActive,
+        order: chapter.order,
+        metadata: chapter.metadata,
+        createdAt: chapter.createdAt,
+        updatedAt: chapter.updatedAt,
+      };
+    } catch (error: any) {
+      if (error instanceof NotFoundException || error instanceof BadRequestException) {
+        throw error;
+      }
+      console.error('Error creating chapter:', error);
+      throw new BadRequestException(`Failed to create chapter: ${error.message}`);
+    }
+  }
+
+  async updateChapter(id: string, data: any) {
+    try {
+      const existing = await this.prisma.chapter.findUnique({
+        where: { id },
+      });
+
+      if (!existing) {
+        throw new NotFoundException('Chapter not found');
+      }
+
+      // If subCategoryId is being changed, validate the new sub-category
+      if (data.subCategoryId && data.subCategoryId !== existing.subCategoryId) {
+        const newSubCategory = await this.prisma.wallCategory.findUnique({
+          where: { id: data.subCategoryId },
+          select: {
+            id: true,
+            parentCategoryId: true,
+          },
+        });
+
+        if (!newSubCategory) {
+          throw new NotFoundException('Sub-category not found');
+        }
+
+        if (!newSubCategory.parentCategoryId) {
+          throw new BadRequestException('Chapters can only be assigned to sub-categories. The provided category is a parent category.');
+        }
+      }
+
+      const chapter = await this.prisma.chapter.update({
+        where: { id },
+        data: {
+          name: data.name,
+          description: data.description,
+          subCategoryId: data.subCategoryId,
+          isActive: data.isActive,
+          order: data.order,
+          metadata: data.metadata,
+        },
+        include: {
+          subCategory: {
+            select: {
+              id: true,
+              name: true,
+              parentCategoryId: true,
+            },
+          },
+        },
+      });
+
+      return {
+        id: chapter.id,
+        name: chapter.name,
+        description: chapter.description,
+        subCategoryId: chapter.subCategoryId,
+        subCategory: chapter.subCategory,
+        isActive: chapter.isActive,
+        order: chapter.order,
+        metadata: chapter.metadata,
+        createdAt: chapter.createdAt,
+        updatedAt: chapter.updatedAt,
+      };
+    } catch (error: any) {
+      if (error instanceof NotFoundException || error instanceof BadRequestException) {
+        throw error;
+      }
+      console.error('Error updating chapter:', error);
+      throw new BadRequestException(`Failed to update chapter: ${error.message}`);
+    }
+  }
+
+  async deleteChapter(id: string) {
+    try {
+      const chapter = await this.prisma.chapter.findUnique({
+        where: { id },
+      });
+
+      if (!chapter) {
+        throw new NotFoundException('Chapter not found');
+      }
+
+      await this.prisma.chapter.delete({ where: { id } });
+
+      return {
+        success: true,
+        message: 'Chapter deleted successfully',
+      };
+    } catch (error: any) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      console.error('Error deleting chapter:', error);
+      throw new BadRequestException(`Failed to delete chapter: ${error.message}`);
+    }
+  }
 }

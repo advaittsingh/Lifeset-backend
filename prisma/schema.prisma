@@ -261,11 +261,33 @@ model WallCategory {
   parent          WallCategory? @relation("CategoryHierarchy", fields: [parentCategoryId], references: [id], onDelete: Cascade)
   subCategories   WallCategory[] @relation("CategoryHierarchy")
 
+  // Chapters (children of sub-categories)
+  chapters        Chapter[]
+
   posts           Post[]
 
   @@index([parentCategoryId])
   @@index([isActive])
   @@index([categoryFor])
+}
+
+model Chapter {
+  id              String   @id @default(uuid())
+  name            String
+  description     String?  @db.Text
+  subCategoryId   String   // Foreign key to WallCategory (sub-category)
+  isActive        Boolean  @default(true)
+  order           Int      @default(0) // For ordering chapters within a sub-category
+  metadata        Json?    // Optional: for storing additional structured data
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relationship to sub-category (WallCategory)
+  subCategory     WallCategory @relation(fields: [subCategoryId], references: [id], onDelete: Cascade)
+
+  @@index([subCategoryId])
+  @@index([isActive])
+  @@index([order])
 }
 
 model JobPost {

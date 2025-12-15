@@ -10,6 +10,8 @@ import { CreateArticleDto } from './dto/create-article.dto';
 import { CreateMcqDto } from './dto/create-mcq.dto';
 import { CreateWallCategoryDto } from './dto/create-wall-category.dto';
 import { UpdateWallCategoryDto } from './dto/update-wall-category.dto';
+import { CreateChapterDto } from './dto/create-chapter.dto';
+import { UpdateChapterDto } from './dto/update-chapter.dto';
 
 @ApiTags('CMS Admin')
 @Controller('admin/cms')
@@ -375,5 +377,68 @@ export class CmsAdminController {
   @ApiOperation({ summary: 'Delete wall category (Admin)' })
   async deleteWallCategory(@Param('id') id: string) {
     return this.cmsAdminService.deleteWallCategory(id);
+  }
+
+  // ========== Chapters ==========
+  // More specific routes must come before less specific ones
+  @Get('sub-categories/:id/chapters')
+  @ApiOperation({ summary: 'Get chapters of a specific sub-category (Admin)' })
+  async getChaptersBySubCategory(@Param('id') subCategoryId: string) {
+    const chapters = await this.cmsAdminService.getChapters({
+      subCategoryId,
+    });
+    return {
+      success: true,
+      data: chapters,
+    };
+  }
+
+  @Get('chapters')
+  @ApiOperation({ summary: 'Get chapters (Admin). Use ?subCategoryId=xxx to filter by sub-category' })
+  async getChapters(@Query() filters: { subCategoryId?: string; isActive?: string }) {
+    const chapters = await this.cmsAdminService.getChapters({
+      subCategoryId: filters.subCategoryId,
+      isActive: filters.isActive !== undefined ? filters.isActive === 'true' : undefined,
+    });
+    return {
+      success: true,
+      data: chapters,
+    };
+  }
+
+  @Get('chapters/:id')
+  @ApiOperation({ summary: 'Get chapter by ID (Admin)' })
+  async getChapterById(@Param('id') id: string) {
+    const chapter = await this.cmsAdminService.getChapterById(id);
+    return {
+      success: true,
+      data: chapter,
+    };
+  }
+
+  @Post('chapters')
+  @ApiOperation({ summary: 'Create chapter (Admin)' })
+  async createChapter(@Body() data: CreateChapterDto) {
+    const chapter = await this.cmsAdminService.createChapter(data);
+    return {
+      success: true,
+      data: chapter,
+    };
+  }
+
+  @Put('chapters/:id')
+  @ApiOperation({ summary: 'Update chapter (Admin)' })
+  async updateChapter(@Param('id') id: string, @Body() data: UpdateChapterDto) {
+    const chapter = await this.cmsAdminService.updateChapter(id, data);
+    return {
+      success: true,
+      data: chapter,
+    };
+  }
+
+  @Delete('chapters/:id')
+  @ApiOperation({ summary: 'Delete chapter (Admin)' })
+  async deleteChapter(@Param('id') id: string) {
+    return this.cmsAdminService.deleteChapter(id);
   }
 }
