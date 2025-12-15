@@ -70,10 +70,24 @@ export class HttpExceptionFilter implements ExceptionFilter {
       }
       
       // Log the error with context
-      this.logger.error(
-        `${request.method} ${request.url} - ${status}: ${message}`,
-        exception.stack,
-      );
+      // For validation errors (400), include request body to help debug
+      if (status === HttpStatus.BAD_REQUEST) {
+        this.logger.error(
+          `${request.method} ${request.url} - ${status}: ${message}`,
+          {
+            body: request.body,
+            query: request.query,
+            params: request.params,
+            validationErrors: details,
+            stack: exception.stack,
+          },
+        );
+      } else {
+        this.logger.error(
+          `${request.method} ${request.url} - ${status}: ${message}`,
+          exception.stack,
+        );
+      }
     } else {
       // Log unexpected errors for debugging
       const error = exception as Error;
@@ -94,16 +108,27 @@ export class HttpExceptionFilter implements ExceptionFilter {
       }
     }
 
-    response.status(status).json({
+    // For validation errors, ensure all error messages are included
+    const errorResponse: any = {
       success: false,
       error: {
         code: status,
         message,
-        details,
       },
       timestamp: new Date().toISOString(),
       path: request.url,
-    });
+    };
+
+    // Include details if available (for validation errors)
+    if (details) {
+      errorResponse.error.details = details;
+      // Also include validation errors at top level for easier access
+      if (details.message && Array.isArray(details.message)) {
+        errorResponse.error.validationErrors = details.message;
+      }
+    }
+
+    response.status(status).json(errorResponse);
   }
 }
 

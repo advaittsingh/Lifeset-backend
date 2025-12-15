@@ -45,7 +45,8 @@ export class CmsAdminService {
     }
 
     // Extract language from top-level if provided, merge into metadata
-    const { metadata, language, ...postData } = data;
+    // Also extract isPublished since it's not in Prisma schema (only isActive exists)
+    const { metadata, language, isPublished, ...postData } = data;
     
     // Build metadata object - merge language from top-level if provided
     const finalMetadata = {
@@ -55,9 +56,11 @@ export class CmsAdminService {
       ...(language && !metadata?.language ? { language } : {}),
       // Store articleId in metadata for MCQ linking (will be set after creation)
       articleId: undefined,
+      // Store isPublished in metadata since it's not a direct field in Post model
+      ...(isPublished !== undefined ? { isPublished } : {}),
     };
     
-    // Create the post
+    // Create the post (isPublished is filtered out since it's not in Prisma schema)
     const post = await this.prisma.post.create({
       data: {
         ...postData,
