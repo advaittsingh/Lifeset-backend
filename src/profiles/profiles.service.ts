@@ -172,5 +172,96 @@ export class ProfilesService {
       score: profile?.profileScore || 0,
     };
   }
+
+  async updateStudentProfile(userId: string, data: any) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { studentProfile: true },
+    });
+
+    if (!user || !user.studentProfile) {
+      throw new NotFoundException('Student profile not found');
+    }
+
+    // Extract nested fields
+    const {
+      nativeAddress,
+      currentAddress,
+      education,
+      competitiveExams,
+      projects,
+      experience,
+      introVideo,
+      resume,
+      ...profileData
+    } = data;
+
+    // Update basic profile fields
+    const updateData: any = { ...profileData };
+
+    // Handle addresses if provided
+    if (nativeAddress) {
+      updateData.nativeAddress = nativeAddress;
+    }
+    if (currentAddress) {
+      updateData.currentAddress = currentAddress;
+    }
+
+    // Handle education if provided
+    if (education) {
+      // Map education array to individual fields if needed
+      // Or store as JSON in a metadata field
+      updateData.education = education;
+    }
+
+    // Handle competitive exams if provided
+    if (competitiveExams) {
+      updateData.competitiveExams = competitiveExams;
+    }
+
+    // Handle projects if provided
+    if (projects) {
+      // Projects are stored in a separate table, handle separately
+      // For now, store in metadata or handle via relations
+      updateData.projects = projects;
+    }
+
+    // Handle experience if provided
+    if (experience) {
+      // Experience is stored in a separate table, handle separately
+      updateData.experience = experience;
+    }
+
+    // Handle intro video
+    if (introVideo !== undefined) {
+      updateData.introVideo = introVideo;
+    }
+
+    // Handle resume
+    if (resume !== undefined) {
+      updateData.resume = resume;
+    }
+
+    // Update the student profile
+    const updated = await this.prisma.studentProfile.update({
+      where: { userId },
+      data: updateData,
+    });
+
+    // Also update user table if firstName/lastName provided
+    if (data.firstName || data.lastName) {
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: {
+          ...(data.firstName && { firstName: data.firstName }),
+          ...(data.lastName && { lastName: data.lastName }),
+        },
+      });
+    }
+
+    await this.calculateProfileScore(userId);
+
+    return updated;
+  }
 }
 

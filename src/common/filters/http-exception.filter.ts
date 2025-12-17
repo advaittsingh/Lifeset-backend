@@ -126,6 +126,25 @@ export class HttpExceptionFilter implements ExceptionFilter {
       if (details.message && Array.isArray(details.message)) {
         errorResponse.error.validationErrors = details.message;
       }
+      // Include property-level errors if available
+      if (details.message && Array.isArray(details.message)) {
+        // Extract property names from validation messages
+        const propertyErrors: Record<string, string[]> = {};
+        details.message.forEach((msg: string) => {
+          // Match patterns like "property X should not exist" or "X must be..."
+          const propertyMatch = msg.match(/property\s+(\w+)|(\w+)\s+must/i);
+          if (propertyMatch) {
+            const propName = propertyMatch[1] || propertyMatch[2];
+            if (!propertyErrors[propName]) {
+              propertyErrors[propName] = [];
+            }
+            propertyErrors[propName].push(msg);
+          }
+        });
+        if (Object.keys(propertyErrors).length > 0) {
+          errorResponse.error.propertyErrors = propertyErrors;
+        }
+      }
     }
 
     response.status(status).json(errorResponse);

@@ -52,5 +52,11 @@ export class ProfilesController {
   async getProfileCompletion(@CurrentUser() user: any) {
     return this.profilesService.getProfileCompletion(user.id);
   }
+
+  @Put('student')
+  @ApiOperation({ summary: 'Update student profile (all fields)' })
+  async updateStudentProfile(@CurrentUser() user: any, @Body() data: any) {
+    return this.profilesService.updateStudentProfile(user.id, data);
+  }
 }
 
