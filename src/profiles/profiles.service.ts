@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service';
 
 @Injectable()
@@ -179,8 +179,13 @@ export class ProfilesService {
       include: { studentProfile: true },
     });
 
-    if (!user || !user.studentProfile) {
-      throw new NotFoundException('Student profile not found');
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Check if user is a student
+    if (user.userType !== 'STUDENT') {
+      throw new BadRequestException('User is not a student');
     }
 
     // Extract nested fields
@@ -193,11 +198,28 @@ export class ProfilesService {
       experience,
       introVideo,
       resume,
+      firstName,
+      lastName,
       ...profileData
     } = data;
 
     // Update basic profile fields
-    const updateData: any = { ...profileData };
+    // Note: firstName and lastName are required for StudentProfile
+    // If profile doesn't exist and these aren't provided, we'll use empty strings (should be provided by client)
+    const updateData: any = { 
+      ...profileData,
+      // Set firstName and lastName - use provided values or keep existing if updating
+      ...(firstName !== undefined && { firstName }),
+      ...(lastName !== undefined && { lastName }),
+    };
+
+    // For create operation, ensure firstName and lastName exist
+    const createData: any = {
+      userId,
+      firstName: firstName || '',
+      lastName: lastName || '',
+      ...updateData,
+    };
 
     // Handle addresses if provided
     if (nativeAddress) {
@@ -242,19 +264,20 @@ export class ProfilesService {
       updateData.resume = resume;
     }
 
-    // Update the student profile
-    const updated = await this.prisma.studentProfile.update({
+    // Use upsert to create profile if it doesn't exist, or update if it does
+    const updated = await this.prisma.studentProfile.upsert({
       where: { userId },
-      data: updateData,
+      update: updateData,
+      create: createData,
     });
 
     // Also update user table if firstName/lastName provided
-    if (data.firstName || data.lastName) {
+    if (firstName || lastName) {
       await this.prisma.user.update({
         where: { id: userId },
         data: {
-          ...(data.firstName && { firstName: data.firstName }),
-          ...(data.lastName && { lastName: data.lastName }),
+          ...(firstName && { firstName }),
+          ...(lastName && { lastName }),
         },
       });
     }
