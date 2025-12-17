@@ -28,6 +28,12 @@ export class CmsAdminController {
     return this.cmsAdminService.getCurrentAffairs(filters);
   }
 
+  @Get('current-affairs/:id')
+  @ApiOperation({ summary: 'Get current affair by ID (Admin)' })
+  async getCurrentAffairById(@Param('id') id: string) {
+    return this.cmsAdminService.getCurrentAffairById(id);
+  }
+
   @Post('current-affairs')
   @ApiOperation({ summary: 'Create current affair (Admin)' })
   async createCurrentAffair(@CurrentUser() user: any, @Body() data: CreateArticleDto) {
@@ -51,6 +57,12 @@ export class CmsAdminController {
   @ApiOperation({ summary: 'Get general knowledge articles (Admin)' })
   async getGeneralKnowledge(@Query() filters: any) {
     return this.cmsAdminService.getGeneralKnowledge(filters);
+  }
+
+  @Get('general-knowledge/:id')
+  @ApiOperation({ summary: 'Get general knowledge article by ID (Admin)' })
+  async getGeneralKnowledgeById(@Param('id') id: string) {
+    return this.cmsAdminService.getGeneralKnowledgeById(id);
   }
 
   @Post('general-knowledge')

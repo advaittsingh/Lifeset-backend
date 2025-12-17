@@ -86,6 +86,43 @@ export class CmsAdminService {
     };
   }
 
+  async getCurrentAffairById(id: string) {
+    const post = await this.prisma.post.findUnique({
+      where: { id, postType: 'CURRENT_AFFAIRS' },
+      include: { 
+        user: true, 
+        category: true,
+      },
+    });
+
+    if (!post) {
+      throw new NotFoundException('Current affair not found');
+    }
+
+    // Extract metadata fields and flatten for frontend
+    const metadata = (post.metadata as any) || {};
+    const { 
+      language, 
+      isPublished, 
+      postType: metadataPostType,
+      articleId: metadataArticleId,
+      ...otherMetadata 
+    } = metadata;
+
+    return {
+      ...post,
+      // Flatten language and isPublished from metadata to top level
+      language: language || undefined,
+      isPublished: isPublished !== undefined ? isPublished : post.isActive,
+      // Return all metadata fields (subCategoryId, chapterId, location, dates, etc.)
+      metadata: {
+        ...otherMetadata,
+        // Include articleId if it exists
+        ...(metadataArticleId && { articleId: metadataArticleId }),
+      },
+    };
+  }
+
   async updateCurrentAffair(id: string, data: any) {
     // Validate description word count if provided (max 60 words) - HTML tags are stripped automatically
     if (data.description) {
@@ -165,6 +202,52 @@ export class CmsAdminService {
     });
 
     return filtered.slice(0, filters?.limit || 20);
+  }
+
+  async getGeneralKnowledgeById(id: string) {
+    const post = await this.prisma.post.findFirst({
+      where: { 
+        id,
+        postType: 'COLLEGE_FEED',
+      },
+      include: { 
+        user: true, 
+        category: true,
+      },
+    });
+
+    if (!post) {
+      throw new NotFoundException('General knowledge article not found');
+    }
+
+    // Check if it's actually a general knowledge article
+    const metadata = (post.metadata as any) || {};
+    if (metadata?.type !== 'GENERAL_KNOWLEDGE') {
+      throw new NotFoundException('General knowledge article not found');
+    }
+
+    // Extract metadata fields and flatten for frontend
+    const { 
+      language, 
+      isPublished, 
+      type, 
+      postType: metadataPostType,
+      articleId: metadataArticleId,
+      ...otherMetadata 
+    } = metadata;
+
+    return {
+      ...post,
+      // Flatten language and isPublished from metadata to top level
+      language: language || undefined,
+      isPublished: isPublished !== undefined ? isPublished : post.isActive,
+      // Return all metadata fields (subCategoryId, chapterId, location, dates, etc.)
+      metadata: {
+        ...otherMetadata,
+        // Include articleId if it exists
+        ...(metadataArticleId && { articleId: metadataArticleId }),
+      },
+    };
   }
 
   async createGeneralKnowledge(data: any, userId: string) {
