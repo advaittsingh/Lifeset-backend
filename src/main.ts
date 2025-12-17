@@ -7,9 +7,20 @@ import { TransformInterceptor } from './common/interceptors/transform.intercepto
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import helmet from 'helmet';
 import compression from 'compression';
+import express from 'express';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // Increase body size limit for JSON requests (default is 100kb)
+  // Allow up to 50MB for articles with images (base64 encoded)
+  const app = await NestFactory.create(AppModule, {
+    bodyParser: false, // Disable default body parser to use custom limits
+    rawBody: false,
+  });
+  
+  // Get the underlying Express instance and configure body parser with increased limits
+  const expressApp = app.getHttpAdapter().getInstance();
+  expressApp.use(express.json({ limit: '50mb' }));
+  expressApp.use(express.urlencoded({ limit: '50mb', extended: true }));
 
   // Security
   app.use(helmet({

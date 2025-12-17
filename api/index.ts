@@ -38,11 +38,18 @@ async function createApp(): Promise<express.Application> {
     });
 
     const expressApp = express();
+    
+    // Increase body size limit for JSON requests (default is 100kb)
+    // Allow up to 50MB for articles with images (base64 encoded)
+    expressApp.use(express.json({ limit: '50mb' }));
+    expressApp.use(express.urlencoded({ limit: '50mb', extended: true }));
+    
     const app = await NestFactory.create(
       AppModule,
       new ExpressAdapter(expressApp),
       {
         logger: ['error', 'warn', 'log'],
+        bodyParser: false, // Disable default body parser, we're using express middleware
       },
     );
 
