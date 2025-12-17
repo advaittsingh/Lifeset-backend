@@ -962,6 +962,9 @@ model PersonalityQuiz {
   id          String   @id @default(uuid())
   question    String   @db.Text
   options     Json     // Array of options
+  yesIs       String?  // Personality type for "yes" answer (E, S, etc.)
+  noIs        String?  // Personality type for "no" answer (E, S, etc.)
+  imageUrl    String?  @db.Text // Image URL or base64-encoded image
   order       Int
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
