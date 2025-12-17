@@ -18,7 +18,12 @@ export class CmsAdminService {
         { description: { contains: filters.search, mode: 'insensitive' } },
       ];
     }
-    if (filters?.isActive !== undefined) where.isActive = filters.isActive === 'true';
+    // Default to showing only active posts unless explicitly filtered
+    if (filters?.isActive !== undefined) {
+      where.isActive = filters.isActive === 'true';
+    } else {
+      where.isActive = true; // Default: only show active (non-deleted) posts
+    }
 
     return this.prisma.post.findMany({
       where,
@@ -185,7 +190,12 @@ export class CmsAdminService {
         { description: { contains: filters.search, mode: 'insensitive' } },
       ];
     }
-    if (filters?.isActive !== undefined) where.isActive = filters.isActive === 'true';
+    // Default to showing only active posts unless explicitly filtered
+    if (filters?.isActive !== undefined) {
+      where.isActive = filters.isActive === 'true';
+    } else {
+      where.isActive = true; // Default: only show active (non-deleted) posts
+    }
 
     const allPosts = await this.prisma.post.findMany({
       where,
