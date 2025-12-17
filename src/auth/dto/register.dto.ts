@@ -3,6 +3,16 @@ import { IsString, IsNotEmpty, IsOptional, IsEnum, ValidateIf } from 'class-vali
 import { UserType } from '@/shared';
 
 export class RegisterDto {
+  @ApiProperty({ description: 'First name', required: false, example: 'John' })
+  @IsOptional()
+  @IsString()
+  firstName?: string;
+
+  @ApiProperty({ description: 'Last name', required: false, example: 'Doe' })
+  @IsOptional()
+  @IsString()
+  lastName?: string;
+
   @ApiProperty({ description: 'Email address', required: false, example: 'user@example.com' })
   @IsOptional()
   @IsString()

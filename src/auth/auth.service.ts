@@ -18,6 +18,8 @@ export class AuthService {
   ) {}
 
   async register(data: {
+    firstName?: string;
+    lastName?: string;
     email?: string;
     mobile?: string;
     password: string;
@@ -60,6 +62,17 @@ export class AuthService {
           userType: data.userType,
         },
       });
+
+      // If userType is STUDENT and firstName/lastName are provided, create StudentProfile
+      if (data.userType === 'STUDENT' && (data.firstName || data.lastName)) {
+        await this.prisma.studentProfile.create({
+          data: {
+            userId: user.id,
+            firstName: data.firstName || '',
+            lastName: data.lastName || '',
+          },
+        });
+      }
 
       return {
         id: user.id,
