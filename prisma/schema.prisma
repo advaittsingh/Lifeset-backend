@@ -142,6 +142,10 @@ model StudentProfile {
   resume          String?  // Resume image URI
   introVideo      String?  // Intro video URI (30-second video recording)
   
+  // User Preferences
+  preferredLanguage String?  // User's preferred app language: 'english' | 'hindi'
+  userStatus        String?  // User's current educational/professional status: 'school_10th' | 'school_11th' | 'school_12th' | 'college_ug' | 'college_pg' | 'college_phd' | 'working_professional' | 'other'
+  
   // Addresses (stored as JSON)
   nativeAddress   Json?    // { state, district, cityVillage, address }
   currentAddress  Json?    // { state, district, cityVillage, address }
