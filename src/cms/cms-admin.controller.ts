@@ -138,8 +138,8 @@ export class CmsAdminController {
   // ========== Know Yourself ==========
   @Get('personality/questions')
   @ApiOperation({ summary: 'Get personality quiz questions (Admin)' })
-  async getPersonalityQuestions() {
-    return this.cmsAdminService.getPersonalityQuestions();
+  async getPersonalityQuestions(@Query() filters: { isPublished?: boolean }) {
+    return this.cmsAdminService.getPersonalityQuestions(filters);
   }
 
   @Post('personality/questions')

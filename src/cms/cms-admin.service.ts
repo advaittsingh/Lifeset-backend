@@ -436,19 +436,38 @@ export class CmsAdminService {
   }
 
   // ========== Know Yourself (Personality Quiz) ==========
-  async getPersonalityQuestions() {
+  async getPersonalityQuestions(filters?: { isPublished?: boolean }) {
+    const where: any = { isActive: true };
+    
+    // Filter by isPublished if provided
+    if (filters?.isPublished !== undefined) {
+      where.isPublished = filters.isPublished;
+    }
+    
     return this.prisma.personalityQuiz.findMany({
-      where: { isActive: true },
+      where,
       orderBy: { order: 'asc' },
     });
   }
 
   async createPersonalityQuestion(data: any) {
-    return this.prisma.personalityQuiz.create({ data });
+    // Extract isPublished and set default if not provided
+    const { isPublished = false, ...questionData } = data;
+    
+    return this.prisma.personalityQuiz.create({
+      data: {
+        ...questionData,
+        isPublished,
+      },
+    });
   }
 
   async updatePersonalityQuestion(id: string, data: any) {
-    return this.prisma.personalityQuiz.update({ where: { id }, data });
+    // isPublished can be updated along with other fields
+    return this.prisma.personalityQuiz.update({ 
+      where: { id }, 
+      data 
+    });
   }
 
   async deletePersonalityQuestion(id: string) {

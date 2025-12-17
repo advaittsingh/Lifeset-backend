@@ -967,6 +967,7 @@ model PersonalityQuiz {
   imageUrl    String?  @db.Text // Image URL or base64-encoded image
   order       Int
   isActive    Boolean  @default(true)
+  isPublished Boolean  @default(false) // Whether the question is published
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
