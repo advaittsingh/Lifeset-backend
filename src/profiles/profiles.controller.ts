@@ -58,5 +58,11 @@ export class ProfilesController {
   async updateStudentProfile(@CurrentUser() user: any, @Body() data: any) {
     return this.profilesService.updateStudentProfile(user.id, data);
   }
+
+  @Put('me/preferences')
+  @ApiOperation({ summary: 'Update user preferences (preferredLanguage, userStatus)' })
+  async updatePreferences(@CurrentUser() user: any, @Body() data: { preferredLanguage?: string; userStatus?: string }) {
+    return this.profilesService.updatePreferences(user.id, data);
+  }
 }
 

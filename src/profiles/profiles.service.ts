@@ -366,5 +366,39 @@ export class ProfilesService {
       },
     });
   }
+
+  async updatePreferences(userId: string, data: { preferredLanguage?: string; userStatus?: string }) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: { studentProfile: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Check if user is a student
+    if (user.userType !== 'STUDENT') {
+      throw new BadRequestException('User is not a student');
+    }
+
+    // Use upsert to create profile if it doesn't exist, or update if it does
+    const updated = await this.prisma.studentProfile.upsert({
+      where: { userId },
+      update: {
+        ...(data.preferredLanguage !== undefined && { preferredLanguage: data.preferredLanguage }),
+        ...(data.userStatus !== undefined && { userStatus: data.userStatus }),
+      },
+      create: {
+        userId,
+        firstName: '', // Required field, will be updated later
+        lastName: '', // Required field, will be updated later
+        ...(data.preferredLanguage !== undefined && { preferredLanguage: data.preferredLanguage }),
+        ...(data.userStatus !== undefined && { userStatus: data.userStatus }),
+      },
+    });
+
+    return updated;
+  }
 }
 
