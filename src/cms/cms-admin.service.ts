@@ -300,7 +300,12 @@ export class CmsAdminService {
   }
 
   async createMcqQuestion(data: any) {
-    const { articleId, metadata, ...mcqData } = data;
+    const { articleId, metadata, categoryId, ...mcqData } = data;
+    
+    // Validate categoryId is provided (required field)
+    if (!categoryId) {
+      throw new BadRequestException('categoryId is required for MCQ questions');
+    }
     
     // Prepare metadata with article context
     const mcqMetadata = metadata || {};
@@ -312,6 +317,7 @@ export class CmsAdminService {
     return this.prisma.mcqQuestion.create({
       data: {
         ...mcqData,
+        categoryId, // Ensure categoryId is included
         articleId: articleId || undefined,
         metadata: Object.keys(mcqMetadata).length > 0 ? mcqMetadata : undefined,
       },

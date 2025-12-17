@@ -188,7 +188,7 @@ export class ProfilesService {
       throw new BadRequestException('User is not a student');
     }
 
-    // Extract nested fields
+    // Extract nested fields and arrays
     const {
       nativeAddress,
       currentAddress,
@@ -200,6 +200,10 @@ export class ProfilesService {
       resume,
       firstName,
       lastName,
+      interestHobbies,
+      professionalSkills,
+      internSwitch,
+      mentorFor,
       ...profileData
     } = data;
 
@@ -213,6 +217,14 @@ export class ProfilesService {
       ...(lastName !== undefined && { lastName }),
     };
 
+    // Handle addresses if provided (store as JSON)
+    if (nativeAddress !== undefined) {
+      updateData.nativeAddress = nativeAddress;
+    }
+    if (currentAddress !== undefined) {
+      updateData.currentAddress = currentAddress;
+    }
+
     // For create operation, ensure firstName and lastName exist
     const createData: any = {
       userId,
@@ -221,38 +233,37 @@ export class ProfilesService {
       ...updateData,
     };
 
-    // Handle addresses if provided
-    if (nativeAddress) {
-      updateData.nativeAddress = nativeAddress;
-    }
-    if (currentAddress) {
-      updateData.currentAddress = currentAddress;
-    }
-
-    // Handle education if provided
-    if (education) {
-      // Map education array to individual fields if needed
-      // Or store as JSON in a metadata field
+    // Handle education array if provided (store as JSON)
+    if (education !== undefined) {
       updateData.education = education;
     }
 
-    // Handle competitive exams if provided
-    if (competitiveExams) {
+    // Handle competitive exams array if provided (store as JSON)
+    if (competitiveExams !== undefined) {
       updateData.competitiveExams = competitiveExams;
     }
 
-    // Handle projects if provided
-    if (projects) {
-      // Projects are stored in a separate table, handle separately
-      // For now, store in metadata or handle via relations
-      updateData.projects = projects;
+    // Handle skills arrays if provided
+    if (interestHobbies !== undefined) {
+      updateData.interestHobbies = interestHobbies;
+    }
+    if (professionalSkills !== undefined) {
+      updateData.professionalSkills = professionalSkills;
+    }
+    if (internSwitch !== undefined) {
+      updateData.internSwitch = internSwitch;
+    }
+    if (mentorFor !== undefined) {
+      updateData.mentorFor = mentorFor;
     }
 
-    // Handle experience if provided
-    if (experience) {
-      // Experience is stored in a separate table, handle separately
-      updateData.experience = experience;
-    }
+    // Handle projects if provided - store in Project table
+    // Note: This will be handled after profile update to ensure studentId exists
+    const projectsToCreate = projects;
+
+    // Handle experience if provided - store in Experience table
+    // Note: This will be handled after profile update to ensure studentId exists
+    const experiencesToCreate = experience;
 
     // Handle intro video
     if (introVideo !== undefined) {
@@ -282,9 +293,77 @@ export class ProfilesService {
       });
     }
 
+    // Handle projects - delete existing and create new ones
+    if (projectsToCreate !== undefined) {
+      // Delete existing projects
+      await this.prisma.project.deleteMany({
+        where: { studentId: updated.id },
+      });
+
+      // Create new projects
+      if (Array.isArray(projectsToCreate) && projectsToCreate.length > 0) {
+        await this.prisma.project.createMany({
+          data: projectsToCreate.map((project: any) => ({
+            studentId: updated.id,
+            projectName: project.projectName,
+            location: project.location,
+            department: project.department,
+            designation: project.designation,
+            startMonthYear: project.startMonthYear,
+            endMonthYear: project.endMonthYear,
+            aboutProject: project.aboutProject,
+            // Map legacy fields if needed
+            title: project.projectName || project.title,
+            description: project.aboutProject || project.description,
+            images: project.images || [],
+            links: project.links || [],
+            technologies: project.technologies || [],
+          })),
+        });
+      }
+    }
+
+    // Handle experience - delete existing and create new ones
+    if (experiencesToCreate !== undefined) {
+      // Delete existing experiences
+      await this.prisma.experience.deleteMany({
+        where: { studentId: updated.id },
+      });
+
+      // Create new experiences
+      if (Array.isArray(experiencesToCreate) && experiencesToCreate.length > 0) {
+        await this.prisma.experience.createMany({
+          data: experiencesToCreate.map((exp: any) => ({
+            studentId: updated.id,
+            companyName: exp.companyName,
+            isFacultyMember: exp.isFacultyMember || false,
+            location: exp.location,
+            department: exp.department,
+            designation: exp.designation,
+            currentlyWorking: exp.currentlyWorking || false,
+            startMonthYear: exp.startMonthYear,
+            endMonthYear: exp.endMonthYear,
+            aboutRole: exp.aboutRole,
+            // Map legacy fields if needed
+            title: exp.designation || exp.title,
+            company: exp.companyName || exp.company,
+            description: exp.aboutRole || exp.description,
+            isCurrent: exp.currentlyWorking || exp.isCurrent || false,
+          })),
+        });
+      }
+    }
+
     await this.calculateProfileScore(userId);
 
-    return updated;
+    // Return updated profile with relations
+    return this.prisma.studentProfile.findUnique({
+      where: { id: updated.id },
+      include: {
+        projects: true,
+        experiences: true,
+      },
+    });
   }
 }
 

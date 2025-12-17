@@ -129,15 +129,41 @@ model StudentProfile {
   collegeProfileId String?
   courseId        String?
   
-  // Education
+  // Personal Details (from PROFILE_FIELDS_DATABASE.md)
+  languageKnown   String?
+  category        String?
+  religion        String?
+  fatherName      String?
+  fatherHighestDegree String?
+  fatherOccupation String?
+  motherName      String?
+  motherHighestDegree String?
+  motherOccupation String?
+  resume          String?  // Resume image URI
+  introVideo      String?  // Intro video URI (30-second video recording)
+  
+  // Addresses (stored as JSON)
+  nativeAddress   Json?    // { state, district, cityVillage, address }
+  currentAddress  Json?    // { state, district, cityVillage, address }
+  
+  // Education (stored as JSON array - replaces education10th, 12th, graduation, postGraduation)
+  education       Json?    // Array of education objects from PROFILE_FIELDS_DATABASE.md
+  // Legacy education fields (kept for backward compatibility)
   education10th   Json?
   education12th   Json?
   graduation      Json?
   postGraduation  Json?
 
   // Skills
+  interestHobbies String[]  // Array of interest/hobbies
   technicalSkills String[]
   softSkills      String[]
+  professionalSkills String[]  // Professional skills array
+  internSwitch    String?    // For UnPaid/Paid Intern Switch (description)
+  mentorFor       String?    // Become an Industry Mentor for (description)
+  
+  // Competitive Exams (stored as JSON array)
+  competitiveExams Json?   // Array of competitive exam objects
 
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -634,34 +660,52 @@ model CourseAssignment {
 }
 
 model Project {
-  id          String   @id @default(uuid())
-  studentId   String
-  title       String
-  description String   @db.Text
-  images      String[]
-  links       String[]
-  technologies String[]
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id              String   @id @default(uuid())
+  studentId       String
+  projectName     String?  // From PROFILE_FIELDS_DATABASE.md (nullable for backward compatibility)
+  location        String?
+  department      String?
+  designation     String?
+  startMonthYear  String?  // Format: MM/YYYY
+  endMonthYear    String?  // Format: MM/YYYY
+  aboutProject    String?  @db.Text
+  // Legacy fields (kept for backward compatibility)
+  title           String?
+  description     String?  @db.Text
+  images          String[]
+  links           String[]
+  technologies    String[]
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  student     StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  student         StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
   @@index([studentId])
 }
 
 model Experience {
-  id          String   @id @default(uuid())
-  studentId   String
-  title       String
-  company     String?
-  description String?  @db.Text
-  startDate   DateTime
-  endDate     DateTime?
-  isCurrent   Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id              String   @id @default(uuid())
+  studentId       String
+  companyName     String?  // From PROFILE_FIELDS_DATABASE.md (nullable for backward compatibility)
+  isFacultyMember Boolean  @default(false)
+  location        String?
+  department      String?
+  designation     String?
+  currentlyWorking Boolean  @default(false)
+  startMonthYear  String?  // Format: MM/YYYY
+  endMonthYear    String?  // Format: MM/YYYY (optional if currentlyWorking is true)
+  aboutRole       String?  @db.Text
+  // Legacy fields (kept for backward compatibility)
+  title           String?
+  company         String?
+  description     String?  @db.Text
+  startDate       DateTime?
+  endDate         DateTime?
+  isCurrent       Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
-  student     StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  student         StudentProfile @relation(fields: [studentId], references: [id], onDelete: Cascade)
 
   @@index([studentId])
 }

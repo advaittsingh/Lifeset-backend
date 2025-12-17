@@ -58,10 +58,10 @@ export class CreateMcqDto {
   @Max(3)
   correctAnswer: number;
 
-  @ApiProperty({ description: 'Category ID', required: false })
+  @ApiProperty({ description: 'Category ID (required)' })
   @IsString()
-  @IsOptional()
-  categoryId?: string;
+  @IsNotEmpty()
+  categoryId: string;
 
   @ApiProperty({ description: 'Explanation', required: false })
   @IsString()
