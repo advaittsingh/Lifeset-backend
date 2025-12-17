@@ -74,11 +74,31 @@ export class AuthService {
         });
       }
 
+      // Automatically log the user in after registration by generating tokens
+      let tokens;
+      try {
+        tokens = await this.generateTokens(user);
+      } catch (error: any) {
+        this.logger.error(`Failed to generate tokens during registration: ${error.message}`, error.stack);
+        throw new InternalServerErrorException('Failed to generate authentication tokens');
+      }
+      
+      // Store session (non-blocking - don't fail registration if session creation fails)
+      try {
+        await this.createSession(user.id, tokens.accessToken, tokens.refreshToken);
+      } catch (error: any) {
+        this.logger.warn(`Failed to create session for user ${user.id} during registration: ${error.message}. Registration will continue.`);
+        // Continue with registration even if session creation fails
+      }
+
       return {
-        id: user.id,
-        email: user.email,
-        mobile: user.mobile,
-        userType: user.userType,
+        user: {
+          id: user.id,
+          email: user.email,
+          mobile: user.mobile,
+          userType: user.userType,
+        },
+        ...tokens, // Include access and refresh tokens
       };
     } catch (error: any) {
       // Log the error for debugging
@@ -320,8 +340,38 @@ export class AuthService {
         throw new UnauthorizedException('User not found or inactive');
       }
 
-      return this.generateTokens(user);
+      // Verify refresh token exists in session
+      const session = await this.prisma.session.findFirst({
+        where: {
+          userId: user.id,
+          refreshToken,
+          expiresAt: { gt: new Date() },
+        },
+      });
+
+      if (!session) {
+        throw new UnauthorizedException('Refresh token not found or expired');
+      }
+
+      // Generate new tokens
+      const tokens = await this.generateTokens(user);
+
+      // Update session with new tokens
+      await this.prisma.session.update({
+        where: { id: session.id },
+        data: {
+          token: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+        },
+      });
+
+      return tokens;
     } catch (error) {
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
+      this.logger.error(`Token refresh failed: ${error.message}`, error.stack);
       throw new UnauthorizedException('Invalid refresh token');
     }
   }
