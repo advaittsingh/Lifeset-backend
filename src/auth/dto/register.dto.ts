@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsOptional, IsEnum } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsEnum, ValidateIf } from 'class-validator';
 import { UserType } from '@/shared';
 
 export class RegisterDto {
@@ -23,4 +23,7 @@ export class RegisterDto {
   @IsNotEmpty({ message: 'User type is required' })
   userType: UserType;
 }
+
+// Custom validation: At least email or mobile must be provided
+// This is handled in the service layer for better error messages
 

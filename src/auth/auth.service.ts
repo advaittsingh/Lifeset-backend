@@ -23,44 +23,85 @@ export class AuthService {
     password: string;
     userType: UserType;
   }) {
-    // Check if user exists
-    if (data.email) {
-      const existingUser = await this.prisma.user.findUnique({
-        where: { email: data.email },
-      });
-      if (existingUser) {
-        throw new BadRequestException('Email already registered');
+    try {
+      // Validate that at least email or mobile is provided
+      if (!data.email && !data.mobile) {
+        throw new BadRequestException('Either email or mobile number is required');
       }
-    }
 
-    if (data.mobile) {
-      const existingUser = await this.prisma.user.findUnique({
-        where: { mobile: data.mobile },
-      });
-      if (existingUser) {
-        throw new BadRequestException('Mobile already registered');
+      // Check if user exists
+      if (data.email) {
+        const existingUser = await this.prisma.user.findUnique({
+          where: { email: data.email },
+        });
+        if (existingUser) {
+          throw new BadRequestException('Email already registered');
+        }
       }
+
+      if (data.mobile) {
+        const existingUser = await this.prisma.user.findUnique({
+          where: { mobile: data.mobile },
+        });
+        if (existingUser) {
+          throw new BadRequestException('Mobile already registered');
+        }
+      }
+
+      // Hash password
+      const hashedPassword = await bcrypt.hash(data.password, 10);
+
+      // Create user
+      const user = await this.prisma.user.create({
+        data: {
+          email: data.email || null,
+          mobile: data.mobile || null,
+          password: hashedPassword,
+          userType: data.userType,
+        },
+      });
+
+      return {
+        id: user.id,
+        email: user.email,
+        mobile: user.mobile,
+        userType: user.userType,
+      };
+    } catch (error: any) {
+      // Log the error for debugging
+      this.logger.error('Registration failed', {
+        error: error.message,
+        stack: error.stack,
+        email: data.email?.substring(0, 3) + '***',
+        mobile: data.mobile?.substring(0, 3) + '***',
+      });
+
+      // Re-throw BadRequestException as-is (already has proper message)
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+
+      // Handle Prisma unique constraint errors
+      if (error.code === 'P2002') {
+        const field = error.meta?.target?.[0];
+        if (field === 'email') {
+          throw new BadRequestException('Email already registered');
+        }
+        if (field === 'mobile') {
+          throw new BadRequestException('Mobile already registered');
+        }
+        throw new BadRequestException('User with this information already exists');
+      }
+
+      // Handle other database errors
+      if (error.code?.startsWith('P')) {
+        this.logger.error('Database error during registration', error);
+        throw new BadRequestException('Registration failed due to database error. Please try again.');
+      }
+
+      // Generic error
+      throw new BadRequestException('Registration failed. Please try again.');
     }
-
-    // Hash password
-    const hashedPassword = await bcrypt.hash(data.password, 10);
-
-    // Create user
-    const user = await this.prisma.user.create({
-      data: {
-        email: data.email,
-        mobile: data.mobile,
-        password: hashedPassword,
-        userType: data.userType,
-      },
-    });
-
-    return {
-      id: user.id,
-      email: user.email,
-      mobile: user.mobile,
-      userType: user.userType,
-    };
   }
 
   async login(emailOrMobile: string, password: string) {
