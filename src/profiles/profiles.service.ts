@@ -291,16 +291,8 @@ export class ProfilesService {
       create: createData,
     });
 
-    // Also update user table if firstName/lastName provided
-    if (firstName || lastName) {
-      await this.prisma.user.update({
-        where: { id: userId },
-        data: {
-          ...(firstName && { firstName }),
-          ...(lastName && { lastName }),
-        },
-      });
-    }
+    // Note: firstName and lastName are stored in StudentProfile, not User model
+    // No need to update User table as it doesn't have these fields
 
     // Handle projects - delete existing and create new ones
     if (projectsToCreate !== undefined) {
