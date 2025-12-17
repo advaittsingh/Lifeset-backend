@@ -6,7 +6,8 @@ export class McqService {
   constructor(private prisma: PrismaService) {}
 
   async getCategories() {
-    return this.prisma.mcqCategory.findMany({
+    // MCQ questions now use WallCategory instead of McqCategory
+    return this.prisma.wallCategory.findMany({
       where: { isActive: true },
       orderBy: { name: 'asc' },
     });

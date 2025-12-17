@@ -291,6 +291,7 @@ model WallCategory {
   chapters        Chapter[]
 
   posts           Post[]
+  mcqQuestions    McqQuestion[]  // MCQ questions using this category
 
   @@index([parentCategoryId])
   @@index([isActive])
@@ -905,16 +906,8 @@ model AdCampaign {
   @@index([createdAt])
 }
 
-model McqCategory {
-  id          String   @id @default(uuid())
-  name        String
-  description String?  @db.Text
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  questions   McqQuestion[]
-}
+// McqCategory model removed - MCQ questions now use WallCategory
+// Keeping this comment for reference - can be deleted after migration
 
 model McqQuestion {
   id            String   @id @default(uuid())
@@ -930,11 +923,12 @@ model McqQuestion {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  category      McqCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  category      WallCategory @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   attempts      McqAttempt[]
   bookmarks     McqBookmark[]
 
   @@index([articleId])
+  @@index([categoryId])
 }
 
 model McqAttempt {

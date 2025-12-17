@@ -333,11 +333,23 @@ export class CmsAdminService {
   }
 
   async getMcqCategories() {
-    return this.prisma.mcqCategory.findMany({ orderBy: { name: 'asc' } });
+    // MCQ questions now use WallCategory instead of McqCategory
+    // Return wall categories that can be used for MCQ
+    return this.prisma.wallCategory.findMany({ 
+      where: { isActive: true },
+      orderBy: { name: 'asc' } 
+    });
   }
 
   async createMcqCategory(data: any) {
-    return this.prisma.mcqCategory.create({ data });
+    // MCQ questions now use WallCategory instead of McqCategory
+    // Create a wall category for MCQ use
+    return this.prisma.wallCategory.create({ 
+      data: {
+        ...data,
+        categoryFor: 'MCQ', // Mark as MCQ category
+      }
+    });
   }
 
   // ========== Know Yourself (Personality Quiz) ==========
