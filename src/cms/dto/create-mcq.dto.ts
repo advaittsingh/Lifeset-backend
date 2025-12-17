@@ -29,6 +29,16 @@ class McqMetadataDto {
   @IsOptional()
   subCategory?: string;
 
+  @ApiProperty({ description: 'Sub category ID', required: false })
+  @IsString()
+  @IsOptional()
+  subCategoryId?: string;
+
+  @ApiProperty({ description: 'Chapter ID', required: false })
+  @IsString()
+  @IsOptional()
+  chapterId?: string;
+
   @ApiProperty({ description: 'Section', required: false })
   @IsString()
   @IsOptional()
