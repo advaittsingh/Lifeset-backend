@@ -200,6 +200,7 @@ export class ProfilesService {
       resume,
       firstName,
       lastName,
+      dateOfBirth,
       interestHobbies,
       professionalSkills,
       internSwitch,
@@ -215,6 +216,10 @@ export class ProfilesService {
       // Set firstName and lastName - use provided values or keep existing if updating
       ...(firstName !== undefined && { firstName }),
       ...(lastName !== undefined && { lastName }),
+      // Handle dateOfBirth - convert from string (YYYY-MM-DD) to Date if provided
+      ...(dateOfBirth !== undefined && { 
+        dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null 
+      }),
     };
 
     // Handle addresses if provided (store as JSON)
@@ -230,6 +235,10 @@ export class ProfilesService {
       userId,
       firstName: firstName || '',
       lastName: lastName || '',
+      // Handle dateOfBirth in create data
+      ...(dateOfBirth !== undefined && { 
+        dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null 
+      }),
       ...updateData,
     };
 
