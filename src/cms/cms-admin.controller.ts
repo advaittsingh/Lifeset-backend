@@ -93,22 +93,8 @@ export class CmsAdminController {
   @Post('mcq/questions')
   @ApiOperation({ summary: 'Create MCQ question (Admin)' })
   async createMcqQuestion(@Body() data: CreateMcqDto) {
-    // Transform DTO to service format
-    const mcqData = {
-      question: data.question,
-      options: data.options,
-      correctAnswer: data.correctAnswer,
-      categoryId: data.categoryId,
-      explanation: data.explanation,
-      difficulty: data.difficulty || 'medium',
-      tags: data.tags || [],
-      articleId: data.articleId,
-      metadata: data.metadata ? {
-        ...data.metadata,
-        articleId: data.articleId || data.metadata.articleId,
-      } : (data.articleId ? { articleId: data.articleId } : undefined),
-    };
-    return this.cmsAdminService.createMcqQuestion(mcqData);
+    // All fields are now direct columns, pass through directly
+    return this.cmsAdminService.createMcqQuestion(data);
   }
 
   @Put('mcq/questions/:id')

@@ -18,41 +18,58 @@ export class FeedsService {
     postType: FeedType;
     categoryId?: string;
     images?: string[];
-    metadata?: any;
+    // Job fields (now as direct properties, not in metadata)
+    companyName?: string;
+    industry?: string;
+    selectRole?: string;
+    jobLocation?: string;
+    clientToManage?: string;
+    workingDays?: string;
+    yearlySalary?: string;
+    salaryMin?: number;
+    salaryMax?: number;
+    skills?: string[];
+    jobFunction?: string;
+    experience?: string;
+    jobType?: string;
+    capacity?: string;
+    workTime?: string;
+    perksAndBenefits?: string;
+    candidateQualities?: string[];
+    isPublic?: boolean;
+    isPrivate?: boolean;
+    privateFiltersCollege?: string;
+    privateFiltersCourse?: string;
+    privateFiltersCourseCategory?: string;
+    privateFiltersYear?: string;
   }) {
-    // Handle job-specific validations and processing
-    // Clone metadata to avoid mutating the original object
-    let processedMetadata = data.metadata 
-      ? (typeof data.metadata === 'object' ? JSON.parse(JSON.stringify(data.metadata)) : {})
-      : {};
-
-    if (data.postType === 'JOB' && processedMetadata) {
+    // Handle job-specific validations
+    if (data.postType === 'JOB') {
       // Validate isPublic and isPrivate are mutually exclusive
-      if (processedMetadata.isPublic === true && processedMetadata.isPrivate === true) {
+      if (data.isPublic === true && data.isPrivate === true) {
         throw new BadRequestException('isPublic and isPrivate cannot both be true');
       }
 
       // Validate privateFilters if isPrivate is true
-      if (processedMetadata.isPrivate === true) {
-        const privateFilters = processedMetadata.privateFilters || {};
+      if (data.isPrivate === true) {
         const hasFilter = 
-          privateFilters.selectCollege || 
-          privateFilters.selectCourse || 
-          privateFilters.selectCourseCategory || 
-          privateFilters.selectYear;
+          data.privateFiltersCollege || 
+          data.privateFiltersCourse || 
+          data.privateFiltersCourseCategory || 
+          data.privateFiltersYear;
         
         if (!hasFilter) {
           throw new BadRequestException('At least one private filter must be provided when isPrivate is true');
         }
 
         // Validate college exists if provided
-        if (privateFilters.selectCollege) {
+        if (data.privateFiltersCollege) {
           try {
             const college = await this.prisma.college.findUnique({
-              where: { id: privateFilters.selectCollege },
+              where: { id: data.privateFiltersCollege },
             });
             if (!college) {
-              throw new BadRequestException(`College with ID ${privateFilters.selectCollege} not found`);
+              throw new BadRequestException(`College with ID ${data.privateFiltersCollege} not found`);
             }
           } catch (error: any) {
             if (error instanceof BadRequestException) {
@@ -63,13 +80,13 @@ export class FeedsService {
         }
 
         // Validate course exists if provided
-        if (privateFilters.selectCourse) {
+        if (data.privateFiltersCourse) {
           try {
             const course = await this.prisma.course.findUnique({
-              where: { id: privateFilters.selectCourse },
+              where: { id: data.privateFiltersCourse },
             });
             if (!course) {
-              throw new BadRequestException(`Course with ID ${privateFilters.selectCourse} not found`);
+              throw new BadRequestException(`Course with ID ${data.privateFiltersCourse} not found`);
             }
           } catch (error: any) {
             if (error instanceof BadRequestException) {
@@ -80,32 +97,27 @@ export class FeedsService {
         }
 
         // Validate year if provided
-        if (privateFilters.selectYear && !['1', '2', '3', '4'].includes(String(privateFilters.selectYear))) {
-          throw new BadRequestException('selectYear must be "1", "2", "3", or "4"');
+        if (data.privateFiltersYear && !['1', '2', '3', '4'].includes(String(data.privateFiltersYear))) {
+          throw new BadRequestException('privateFiltersYear must be "1", "2", "3", or "4"');
         }
       }
 
       // Validate candidate qualities
-      if (processedMetadata.candidateQualities && !validateCandidateQualities(processedMetadata.candidateQualities)) {
+      if (data.candidateQualities && !validateCandidateQualities(data.candidateQualities)) {
         throw new BadRequestException('Invalid candidate quality. Valid values: outgoing, realistic, structured, prioritizes_fairness, reserved, conceptual, open_ended, people_impact');
       }
 
       // Parse yearlySalary and populate salaryMin/salaryMax
-      if (processedMetadata.yearlySalary) {
-        const { salaryMin, salaryMax } = parseYearlySalary(processedMetadata.yearlySalary);
-        processedMetadata.salaryMin = processedMetadata.salaryMin ?? salaryMin;
-        processedMetadata.salaryMax = processedMetadata.salaryMax ?? salaryMax;
+      if (data.yearlySalary) {
+        const { salaryMin, salaryMax } = parseYearlySalary(data.yearlySalary);
+        data.salaryMin = data.salaryMin ?? salaryMin;
+        data.salaryMax = data.salaryMax ?? salaryMax;
       }
 
       // Set defaults for isPublic/isPrivate if not provided
-      if (processedMetadata.isPublic === undefined && processedMetadata.isPrivate === undefined) {
-        processedMetadata.isPublic = true;
-        processedMetadata.isPrivate = false;
-      }
-
-      // Remove privateFilters if isPrivate is false
-      if (processedMetadata.isPrivate === false) {
-        delete processedMetadata.privateFilters;
+      if (data.isPublic === undefined && data.isPrivate === undefined) {
+        data.isPublic = true;
+        data.isPrivate = false;
       }
     }
 
@@ -118,7 +130,30 @@ export class FeedsService {
           postType: data.postType,
           categoryId: data.categoryId,
           images: data.images || [],
-          metadata: processedMetadata || {},
+          // Job fields (now as columns)
+          companyName: data.companyName,
+          industry: data.industry,
+          selectRole: data.selectRole,
+          jobLocation: data.jobLocation,
+          clientToManage: data.clientToManage,
+          workingDays: data.workingDays,
+          yearlySalary: data.yearlySalary,
+          salaryMin: data.salaryMin,
+          salaryMax: data.salaryMax,
+          skills: data.skills || [],
+          jobFunction: data.jobFunction,
+          experience: data.experience,
+          jobType: data.jobType as any, // Cast to enum
+          capacity: data.capacity,
+          workTime: data.workTime,
+          perksAndBenefits: data.perksAndBenefits,
+          candidateQualities: data.candidateQualities || [],
+          isPublic: data.isPublic,
+          isPrivate: data.isPrivate,
+          privateFiltersCollege: data.privateFiltersCollege,
+          privateFiltersCourse: data.privateFiltersCourse,
+          privateFiltersCourseCategory: data.privateFiltersCourseCategory,
+          privateFiltersYear: data.privateFiltersYear,
         },
       });
 
@@ -194,39 +229,28 @@ export class FeedsService {
       where.categoryId = filters.category;
     }
 
-    // Job-specific filtering using Prisma JSONB syntax
+    // Job-specific filtering using direct columns
     if (filters.type === 'JOB') {
-      const metadataFilters: any[] = [];
-      
       if (filters.isPublic !== undefined) {
-        metadataFilters.push({
-          metadata: { path: ['isPublic'], equals: filters.isPublic },
-        });
+        where.isPublic = filters.isPublic;
       }
       if (filters.isPrivate !== undefined) {
-        metadataFilters.push({
-          metadata: { path: ['isPrivate'], equals: filters.isPrivate },
-        });
+        where.isPrivate = filters.isPrivate;
       }
       if (filters.jobType) {
-        metadataFilters.push({
-          metadata: { path: ['jobType'], equals: filters.jobType },
-        });
+        where.jobType = filters.jobType;
       }
       if (filters.industry) {
-        metadataFilters.push({
-          metadata: { path: ['industry'], equals: filters.industry },
-        });
+        where.industry = filters.industry;
       }
       if (filters.function) {
-        metadataFilters.push({
-          metadata: { path: ['function'], equals: filters.function },
-        });
+        where.jobFunction = filters.function;
       }
-      
-      // Combine metadata filters with AND logic
-      if (metadataFilters.length > 0) {
-        where.AND = [...(where.AND || []), ...metadataFilters];
+      if (filters.salaryMin !== undefined) {
+        where.salaryMin = { gte: filters.salaryMin };
+      }
+      if (filters.salaryMax !== undefined) {
+        where.salaryMax = { lte: filters.salaryMax };
       }
     }
 

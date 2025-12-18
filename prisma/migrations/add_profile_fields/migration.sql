@@ -94,3 +94,5 @@ UPDATE "Experience"
 SET "endMonthYear" = TO_CHAR("endDate", 'MM/YYYY')
 WHERE "endMonthYear" IS NULL AND "endDate" IS NOT NULL;
 
+
+

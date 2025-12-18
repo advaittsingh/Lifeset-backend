@@ -1,29 +1,59 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsOptional, IsBoolean, IsArray, IsObject, ValidateNested, IsDateString, IsNumber, Min, Max, MaxLength, ValidateIf } from 'class-validator';
-import { Type } from 'class-transformer';
+import { IsString, IsNotEmpty, IsOptional, IsBoolean, IsArray, IsDateString, IsEnum } from 'class-validator';
 
-class LocationDto {
-  @ApiProperty({ description: 'Latitude (as string)', example: '28.6139' })
-  @IsString()
-  @IsOptional()
-  lat?: string;
-
-  @ApiProperty({ description: 'Longitude (as string)', example: '77.2090' })
-  @IsString()
-  @IsOptional()
-  long?: string;
+export enum Language {
+  ENGLISH = 'ENGLISH',
+  HINDI = 'HINDI',
 }
 
-class ArticleMetadataDto {
+export class CreateArticleDto {
+  @ApiProperty({ description: 'Article title' })
+  @IsString()
+  @IsNotEmpty()
+  title: string;
+
+  @ApiProperty({ description: 'Article description (max 60 words)' })
+  @IsString()
+  @IsNotEmpty()
+  // Note: Word count validation is done in service after stripping HTML
+  description: string;
+
+  @ApiProperty({ description: 'Language (ENGLISH | HINDI)', enum: Language, required: false })
+  @IsEnum(Language)
+  @IsOptional()
+  language?: Language;
+
+  @ApiProperty({ description: 'Category ID', required: false })
+  @IsString()
+  @IsOptional()
+  categoryId?: string;
+
+  @ApiProperty({ description: 'Images', type: [String], required: false })
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  images?: string[];
+
+  @ApiProperty({ description: 'Is active', required: false })
+  @IsBoolean()
+  @IsOptional()
+  isActive?: boolean;
+
+  @ApiProperty({ description: 'Is published', required: false })
+  @IsBoolean()
+  @IsOptional()
+  isPublished?: boolean;
+
+  // Article-specific fields (moved from metadata)
   @ApiProperty({ description: 'Full article content', required: false })
   @IsString()
   @IsOptional()
   fullArticle?: string;
 
-  @ApiProperty({ description: 'Category', required: false })
+  @ApiProperty({ description: 'Category name (denormalized)', required: false })
   @IsString()
   @IsOptional()
-  category?: string;
+  articleCategory?: string;
 
   @ApiProperty({ description: 'Sub category ID (UUID)', required: false })
   @IsString()
@@ -50,16 +80,6 @@ class ArticleMetadataDto {
   @IsOptional()
   country?: string;
 
-  @ApiProperty({ description: 'Post type', example: 'General Knowledge' })
-  @IsString()
-  @IsOptional()
-  postType?: string;
-
-  @ApiProperty({ description: 'Language (ENGLISH | HINDI)', required: false })
-  @IsString()
-  @IsOptional()
-  language?: string;
-
   @ApiProperty({ description: 'Headline', required: false })
   @IsString()
   @IsOptional()
@@ -83,7 +103,7 @@ class ArticleMetadataDto {
   @ApiProperty({ description: 'Article date (YYYY-MM-DD)', required: false })
   @IsDateString()
   @IsOptional()
-  date?: string;
+  articleDate?: string;
 
   @ApiProperty({ description: 'Event dates', type: [String], required: false })
   @IsArray()
@@ -96,12 +116,15 @@ class ArticleMetadataDto {
   @IsOptional()
   eventYearRange?: string;
 
-  @ApiProperty({ description: 'Location coordinates', type: LocationDto, required: false })
-  @IsObject()
-  @ValidateNested()
-  @Type(() => LocationDto)
+  @ApiProperty({ description: 'Location latitude', required: false })
+  @IsString()
   @IsOptional()
-  location?: LocationDto;
+  locationLat?: string;
+
+  @ApiProperty({ description: 'Location longitude', required: false })
+  @IsString()
+  @IsOptional()
+  locationLong?: string;
 
   @ApiProperty({ description: 'State', required: false })
   @IsString()
@@ -128,56 +151,10 @@ class ArticleMetadataDto {
   @IsOptional()
   notificationTime?: string;
 
-  @ApiProperty({ description: 'Article ID for MCQ linking', required: false })
+  @ApiProperty({ description: 'Article type (GENERAL_KNOWLEDGE for GK articles)', required: false })
   @IsString()
   @IsOptional()
-  articleId?: string;
-}
-
-export class CreateArticleDto {
-  @ApiProperty({ description: 'Article title' })
-  @IsString()
-  @IsNotEmpty()
-  title: string;
-
-  @ApiProperty({ description: 'Article description (max 60 words)' })
-  @IsString()
-  @IsNotEmpty()
-  // Note: Word count validation is done in service after stripping HTML
-  description: string;
-
-  @ApiProperty({ description: 'Language (ENGLISH | HINDI)', required: false })
-  @IsString()
-  @IsOptional()
-  language?: string;
-
-  @ApiProperty({ description: 'Category ID', required: false })
-  @IsString()
-  @IsOptional()
-  categoryId?: string;
-
-  @ApiProperty({ description: 'Images', type: [String], required: false })
-  @IsArray()
-  @IsString({ each: true })
-  @IsOptional()
-  images?: string[];
-
-  @ApiProperty({ description: 'Is active', required: false })
-  @IsBoolean()
-  @IsOptional()
-  isActive?: boolean;
-
-  @ApiProperty({ description: 'Is published', required: false })
-  @IsBoolean()
-  @IsOptional()
-  isPublished?: boolean;
-
-  @ApiProperty({ description: 'Article metadata', type: ArticleMetadataDto, required: false })
-  @IsObject()
-  @ValidateNested()
-  @Type(() => ArticleMetadataDto)
-  @IsOptional()
-  metadata?: ArticleMetadataDto;
+  articleType?: string;
 }
 
 

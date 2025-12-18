@@ -66,3 +66,5 @@ SET "parentCategoryId" = NULL
 WHERE "parentCategoryId" IS NULL OR "parentCategoryId" = '';
 
 
+
+

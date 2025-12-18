@@ -43,3 +43,5 @@ ON "Post" USING GIN ((metadata->'privateFilters'))
 WHERE "postType" = 'JOB' AND (metadata->>'isPrivate')::boolean = true;
 
 
+
+

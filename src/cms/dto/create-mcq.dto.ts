@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsOptional, IsArray, IsObject, ValidateNested, IsNumber, Min, Max, IsBoolean } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsArray, ValidateNested, IsNumber, Min, Max, IsBoolean } from 'class-validator';
 import { Type } from 'class-transformer';
 
 class McqOptionDto {
@@ -11,43 +11,6 @@ class McqOptionDto {
   @ApiProperty({ description: 'Is correct answer' })
   @IsBoolean()
   isCorrect: boolean;
-}
-
-class McqMetadataDto {
-  @ApiProperty({ description: 'Article ID', required: false })
-  @IsString()
-  @IsOptional()
-  articleId?: string;
-
-  @ApiProperty({ description: 'Category', required: false })
-  @IsString()
-  @IsOptional()
-  category?: string;
-
-  @ApiProperty({ description: 'Sub category', required: false })
-  @IsString()
-  @IsOptional()
-  subCategory?: string;
-
-  @ApiProperty({ description: 'Sub category ID', required: false })
-  @IsString()
-  @IsOptional()
-  subCategoryId?: string;
-
-  @ApiProperty({ description: 'Chapter ID', required: false })
-  @IsString()
-  @IsOptional()
-  chapterId?: string;
-
-  @ApiProperty({ description: 'Section', required: false })
-  @IsString()
-  @IsOptional()
-  section?: string;
-
-  @ApiProperty({ description: 'Country', required: false })
-  @IsString()
-  @IsOptional()
-  country?: string;
 }
 
 export class CreateMcqDto {
@@ -94,11 +57,45 @@ export class CreateMcqDto {
   @IsOptional()
   tags?: string[];
 
-  @ApiProperty({ description: 'MCQ metadata', type: McqMetadataDto, required: false })
-  @IsObject()
-  @ValidateNested()
-  @Type(() => McqMetadataDto)
+  // MCQ-specific fields (moved from metadata)
+  @ApiProperty({ description: 'Category name (denormalized)', required: false })
+  @IsString()
   @IsOptional()
-  metadata?: McqMetadataDto;
+  mcqCategory?: string;
+
+  @ApiProperty({ description: 'Sub category name', required: false })
+  @IsString()
+  @IsOptional()
+  subCategory?: string;
+
+  @ApiProperty({ description: 'Sub category ID', required: false })
+  @IsString()
+  @IsOptional()
+  subCategoryId?: string;
+
+  @ApiProperty({ description: 'Chapter ID', required: false })
+  @IsString()
+  @IsOptional()
+  chapterId?: string;
+
+  @ApiProperty({ description: 'Section', required: false })
+  @IsString()
+  @IsOptional()
+  section?: string;
+
+  @ApiProperty({ description: 'Country', required: false })
+  @IsString()
+  @IsOptional()
+  country?: string;
+
+  @ApiProperty({ description: 'Question image URL', required: false })
+  @IsString()
+  @IsOptional()
+  questionImage?: string;
+
+  @ApiProperty({ description: 'Explanation image URL', required: false })
+  @IsString()
+  @IsOptional()
+  explanationImage?: string;
 }
 

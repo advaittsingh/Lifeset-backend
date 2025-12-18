@@ -2,3 +2,5 @@
 ALTER TABLE "Notification" ADD COLUMN IF NOT EXISTS "redirectUrl" VARCHAR(500);
 ALTER TABLE "Notification" ADD COLUMN IF NOT EXISTS "image" TEXT;
 
+
+

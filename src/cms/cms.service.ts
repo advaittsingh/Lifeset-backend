@@ -78,28 +78,10 @@ export class CmsService {
       throw new NotFoundException('Current affair not found');
     }
 
-    // Extract metadata fields and flatten fullArticle for frontend
-    const metadata = (post.metadata as any) || {};
-    const { 
-      language, 
-      isPublished, 
-      postType: metadataPostType,
-      articleId: metadataArticleId,
-      fullArticle,
-      ...otherMetadata 
-    } = metadata;
-
+    // All fields are now columns, return as-is
     return {
       ...post,
-      // Flatten fullArticle, language, and isPublished from metadata to top level
-      fullArticle: fullArticle || undefined,
-      language: language || undefined,
-      isPublished: isPublished !== undefined ? isPublished : post.isActive,
-      // Return remaining metadata fields
-      metadata: Object.keys(otherMetadata).length > 0 ? {
-        ...otherMetadata,
-        ...(metadataArticleId && { articleId: metadataArticleId }),
-      } : undefined,
+      isPublished: post.isPublished !== undefined ? post.isPublished : post.isActive,
     };
   }
 
@@ -107,6 +89,7 @@ export class CmsService {
     const where: any = { 
       postType: 'COLLEGE_FEED',
       isActive: true,
+      articleType: 'GENERAL_KNOWLEDGE', // Filter by articleType column
     };
     if (filters?.categoryId) where.categoryId = filters.categoryId;
     if (filters?.search) {
@@ -120,34 +103,24 @@ export class CmsService {
     const limit = filters?.limit || 20;
     const skip = (page - 1) * limit;
 
-    const allPosts = await this.prisma.post.findMany({
-      where,
-      include: { user: true, category: true },
-      orderBy: { createdAt: 'desc' },
-      skip,
-      take: limit * 2, // Get more to filter by metadata
-    });
-
-    // Filter by metadata type
-    const filtered = allPosts.filter((post: any) => {
-      const metadata = post.metadata as any;
-      return metadata?.type === 'GENERAL_KNOWLEDGE';
-    });
-
-    const total = await this.prisma.post.count({
-      where: {
-        ...where,
-        // Note: Can't filter by metadata in Prisma count, so this is approximate
-      },
-    });
+    const [posts, total] = await Promise.all([
+      this.prisma.post.findMany({
+        where,
+        include: { user: true, category: true },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.post.count({ where }),
+    ]);
 
     return {
-      data: filtered.slice(0, limit),
+      data: posts,
       pagination: {
         page,
         limit,
-        total: Math.min(total, filtered.length),
-        totalPages: Math.ceil(Math.min(total, filtered.length) / limit),
+        total,
+        totalPages: Math.ceil(total / limit),
       },
     };
   }
@@ -157,7 +130,8 @@ export class CmsService {
       where: { 
         id,
         postType: 'COLLEGE_FEED',
-        isActive: true 
+        isActive: true,
+        articleType: 'GENERAL_KNOWLEDGE', // Filter by articleType column
       },
       include: { user: true, category: true },
     });
@@ -166,33 +140,10 @@ export class CmsService {
       throw new NotFoundException('General knowledge article not found');
     }
 
-    const metadata = post.metadata as any;
-    if (metadata?.type !== 'GENERAL_KNOWLEDGE') {
-      throw new NotFoundException('General knowledge article not found');
-    }
-
-    // Extract metadata fields and flatten fullArticle for frontend
-    const { 
-      language, 
-      isPublished, 
-      postType: metadataPostType,
-      articleId: metadataArticleId,
-      type,
-      fullArticle,
-      ...otherMetadata 
-    } = metadata;
-
+    // All fields are now columns, return as-is
     return {
       ...post,
-      // Flatten fullArticle, language, and isPublished from metadata to top level
-      fullArticle: fullArticle || undefined,
-      language: language || undefined,
-      isPublished: isPublished !== undefined ? isPublished : post.isActive,
-      // Return remaining metadata fields
-      metadata: Object.keys(otherMetadata).length > 0 ? {
-        ...otherMetadata,
-        ...(metadataArticleId && { articleId: metadataArticleId }),
-      } : undefined,
+      isPublished: post.isPublished !== undefined ? post.isPublished : post.isActive,
     };
   }
 }
