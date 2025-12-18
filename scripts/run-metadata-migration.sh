@@ -119,3 +119,4 @@ echo ""
 echo -e "${YELLOW}If you need to rollback:${NC}"
 echo "psql $DATABASE_URL < $BACKUP_FILE"
 
+

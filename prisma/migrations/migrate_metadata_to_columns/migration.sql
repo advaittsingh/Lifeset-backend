@@ -227,3 +227,4 @@ ALTER TABLE "Post" ADD CONSTRAINT "check_language" CHECK ("language" IS NULL OR 
 ALTER TABLE "Post" ADD CONSTRAINT "check_job_type" CHECK ("jobType" IS NULL OR "jobType" IN ('FULL_TIME', 'PART_TIME', 'CONTRACT', 'INTERNSHIP', 'FREELANCE'));
 ALTER TABLE "Post" ADD CONSTRAINT "check_private_filters_year" CHECK ("privateFiltersYear" IS NULL OR "privateFiltersYear" IN ('1', '2', '3', '4'));
 
+
