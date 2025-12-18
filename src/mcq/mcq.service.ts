@@ -8,13 +8,17 @@ export class McqService {
   async getCategories() {
     // MCQ questions now use WallCategory instead of McqCategory
     // Filter by categoryFor: 'MCQ' to ensure we only get MCQ categories
-    return this.prisma.wallCategory.findMany({
+    const categories = await this.prisma.wallCategory.findMany({
       where: { 
         isActive: true,
         categoryFor: 'MCQ',
       },
       orderBy: { name: 'asc' },
     });
+    
+    // Return as array for direct consumption
+    // After TransformInterceptor: { success: true, data: [...categories], timestamp: "..." }
+    return categories;
   }
 
   async getQuestions(filters: {
@@ -25,6 +29,9 @@ export class McqService {
     page?: number;
     limit?: number;
   }) {
+    // Check if pagination was explicitly requested
+    const hasExplicitPagination = filters.page !== undefined || filters.limit !== undefined;
+    
     const page = filters.page || 1;
     // If no categoryId is provided and no limit specified, allow fetching more questions (for "get all" scenario)
     // Otherwise use default limit of 20
@@ -62,6 +69,17 @@ export class McqService {
       this.prisma.mcqQuestion.count({ where }),
     ]);
 
+    // If no explicit pagination parameters were provided, return questions directly as array
+    // This matches the categories endpoint structure and is easier for mobile app to consume
+    // After TransformInterceptor: { success: true, data: [...questions], timestamp: "..." }
+    // Mobile app can access: response.data directly
+    if (!hasExplicitPagination) {
+      return questions;
+    }
+
+    // Otherwise return paginated structure
+    // After TransformInterceptor: { success: true, data: { data: [...], pagination: {...} }, timestamp: "..." }
+    // Mobile app should access: response.data.data for questions array
     return {
       data: questions,
       pagination: {
