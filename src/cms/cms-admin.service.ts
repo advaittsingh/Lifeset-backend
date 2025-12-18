@@ -111,20 +111,22 @@ export class CmsAdminService {
       isPublished, 
       postType: metadataPostType,
       articleId: metadataArticleId,
+      fullArticle,
       ...otherMetadata 
     } = metadata;
 
     return {
       ...post,
-      // Flatten language and isPublished from metadata to top level
+      // Flatten fullArticle, language, and isPublished from metadata to top level
+      fullArticle: fullArticle || undefined,
       language: language || undefined,
       isPublished: isPublished !== undefined ? isPublished : post.isActive,
       // Return all metadata fields (subCategoryId, chapterId, location, dates, etc.)
-      metadata: {
+      metadata: Object.keys(otherMetadata).length > 0 ? {
         ...otherMetadata,
         // Include articleId if it exists
         ...(metadataArticleId && { articleId: metadataArticleId }),
-      },
+      } : undefined,
     };
   }
 
@@ -243,20 +245,22 @@ export class CmsAdminService {
       type, 
       postType: metadataPostType,
       articleId: metadataArticleId,
+      fullArticle,
       ...otherMetadata 
     } = metadata;
 
     return {
       ...post,
-      // Flatten language and isPublished from metadata to top level
+      // Flatten fullArticle, language, and isPublished from metadata to top level
+      fullArticle: fullArticle || undefined,
       language: language || undefined,
       isPublished: isPublished !== undefined ? isPublished : post.isActive,
       // Return all metadata fields (subCategoryId, chapterId, location, dates, etc.)
-      metadata: {
+      metadata: Object.keys(otherMetadata).length > 0 ? {
         ...otherMetadata,
         // Include articleId if it exists
         ...(metadataArticleId && { articleId: metadataArticleId }),
-      },
+      } : undefined,
     };
   }
 

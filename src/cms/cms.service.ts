@@ -78,7 +78,29 @@ export class CmsService {
       throw new NotFoundException('Current affair not found');
     }
 
-    return post;
+    // Extract metadata fields and flatten fullArticle for frontend
+    const metadata = (post.metadata as any) || {};
+    const { 
+      language, 
+      isPublished, 
+      postType: metadataPostType,
+      articleId: metadataArticleId,
+      fullArticle,
+      ...otherMetadata 
+    } = metadata;
+
+    return {
+      ...post,
+      // Flatten fullArticle, language, and isPublished from metadata to top level
+      fullArticle: fullArticle || undefined,
+      language: language || undefined,
+      isPublished: isPublished !== undefined ? isPublished : post.isActive,
+      // Return remaining metadata fields
+      metadata: Object.keys(otherMetadata).length > 0 ? {
+        ...otherMetadata,
+        ...(metadataArticleId && { articleId: metadataArticleId }),
+      } : undefined,
+    };
   }
 
   async getGeneralKnowledge(filters?: any) {
@@ -149,7 +171,29 @@ export class CmsService {
       throw new NotFoundException('General knowledge article not found');
     }
 
-    return post;
+    // Extract metadata fields and flatten fullArticle for frontend
+    const { 
+      language, 
+      isPublished, 
+      postType: metadataPostType,
+      articleId: metadataArticleId,
+      type,
+      fullArticle,
+      ...otherMetadata 
+    } = metadata;
+
+    return {
+      ...post,
+      // Flatten fullArticle, language, and isPublished from metadata to top level
+      fullArticle: fullArticle || undefined,
+      language: language || undefined,
+      isPublished: isPublished !== undefined ? isPublished : post.isActive,
+      // Return remaining metadata fields
+      metadata: Object.keys(otherMetadata).length > 0 ? {
+        ...otherMetadata,
+        ...(metadataArticleId && { articleId: metadataArticleId }),
+      } : undefined,
+    };
   }
 }
 
