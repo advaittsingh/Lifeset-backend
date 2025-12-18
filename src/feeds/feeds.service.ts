@@ -184,7 +184,7 @@ export class FeedsService {
         message: error.message,
         code: error.code,
         stack: error.stack,
-        data: { ...data, metadata: data.metadata ? 'present' : 'missing' },
+        data: { title: data.title, postType: data.postType },
       });
       throw error;
     }
@@ -205,6 +205,8 @@ export class FeedsService {
     jobType?: string;
     industry?: string;
     function?: string;
+    salaryMin?: number;
+    salaryMax?: number;
   }, userId?: string) {
     const page = filters.page || 1;
     const limit = filters.limit || 20;
