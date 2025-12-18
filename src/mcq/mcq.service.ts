@@ -7,8 +7,12 @@ export class McqService {
 
   async getCategories() {
     // MCQ questions now use WallCategory instead of McqCategory
+    // Filter by categoryFor: 'MCQ' to ensure we only get MCQ categories
     return this.prisma.wallCategory.findMany({
-      where: { isActive: true },
+      where: { 
+        isActive: true,
+        categoryFor: 'MCQ',
+      },
       orderBy: { name: 'asc' },
     });
   }
@@ -22,7 +26,9 @@ export class McqService {
     limit?: number;
   }) {
     const page = filters.page || 1;
-    const limit = filters.limit || 20;
+    // If no categoryId is provided and no limit specified, allow fetching more questions (for "get all" scenario)
+    // Otherwise use default limit of 20
+    const limit = filters.limit || (filters.categoryId ? 20 : 1000);
     const skip = (page - 1) * limit;
 
     const where: any = {};
@@ -51,6 +57,7 @@ export class McqService {
         include: {
           category: true,
         },
+        orderBy: { createdAt: 'desc' },
       }),
       this.prisma.mcqQuestion.count({ where }),
     ]);
