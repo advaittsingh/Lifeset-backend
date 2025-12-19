@@ -30,9 +30,9 @@ export class FeedsService {
     salaryMax?: number;
     skills?: string[];
     jobFunction?: string;
-    experience?: string;
+    experience?: string | number;
     jobType?: string;
-    capacity?: string;
+    capacity?: string | number;
     workTime?: string;
     perksAndBenefits?: string;
     candidateQualities?: string[];
@@ -142,9 +142,9 @@ export class FeedsService {
           salaryMax: data.salaryMax,
           skills: data.skills || [],
           jobFunction: data.jobFunction,
-          experience: data.experience,
+          experience: data.experience ? String(data.experience) : undefined, // Convert to string if provided
           jobType: data.jobType as any, // Cast to enum
-          capacity: data.capacity,
+          capacity: data.capacity ? String(data.capacity) : undefined, // Convert to string if provided
           workTime: data.workTime,
           perksAndBenefits: data.perksAndBenefits,
           candidateQualities: data.candidateQualities || [],

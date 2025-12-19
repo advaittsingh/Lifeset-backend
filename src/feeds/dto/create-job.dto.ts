@@ -93,20 +93,18 @@ export class CreateJobDto {
   @IsOptional()
   jobFunction?: string;
 
-  @ApiProperty({ description: 'Experience', required: false })
-  @IsString()
+  @ApiProperty({ description: 'Experience (can be string or number)', required: false })
   @IsOptional()
-  experience?: string;
+  experience?: string | number;
 
   @ApiProperty({ description: 'Job type', enum: JobType, required: false })
   @IsEnum(JobType)
   @IsOptional()
   jobType?: JobType;
 
-  @ApiProperty({ description: 'Capacity', required: false })
-  @IsString()
+  @ApiProperty({ description: 'Capacity (can be string or number)', required: false })
   @IsOptional()
-  capacity?: string;
+  capacity?: string | number;
 
   @ApiProperty({ description: 'Work time', required: false })
   @IsString()
