@@ -5,3 +5,6 @@ ALTER TABLE "Notification" ADD COLUMN IF NOT EXISTS "image" TEXT;
 
 
 
+
+
+

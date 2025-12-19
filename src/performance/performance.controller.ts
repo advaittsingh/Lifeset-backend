@@ -1,8 +1,9 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { Controller, Get, Post, Body, Query, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiBody } from '@nestjs/swagger';
 import { PerformanceService } from './performance.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { TrackEngagementDto } from './dto/track-engagement.dto';
 
 @ApiTags('Performance')
 @Controller('performance')
@@ -39,6 +40,31 @@ export class PerformanceController {
   @ApiOperation({ summary: 'Get leaderboard' })
   async getLeaderboard(@Query('limit') limit?: number) {
     return this.performanceService.getLeaderboard(limit);
+  }
+
+  // ========== Daily Digest Engagement ==========
+  @Post('daily-digest/engagement')
+  @ApiOperation({ summary: 'Track daily digest engagement' })
+  @ApiBody({ type: TrackEngagementDto })
+  async trackEngagement(
+    @CurrentUser() user: any,
+    @Body() dto: TrackEngagementDto,
+  ) {
+    return this.performanceService.trackEngagement(user.id, dto);
+  }
+
+  // ========== Weekly Performance Meter ==========
+  @Get('weekly-meter')
+  @ApiOperation({ summary: 'Get weekly performance meter (last 7 days)' })
+  async getWeeklyMeter(@CurrentUser() user: any) {
+    return this.performanceService.getWeeklyMeter(user.id);
+  }
+
+  // ========== Badge Status ==========
+  @Get('badge-status')
+  @ApiOperation({ summary: 'Get user badge status based on 6-month activity' })
+  async getBadgeStatus(@CurrentUser() user: any) {
+    return this.performanceService.getBadgeStatus(user.id);
   }
 }
 

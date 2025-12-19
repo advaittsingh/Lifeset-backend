@@ -1,9 +1,25 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsNotEmpty, IsOptional, IsBoolean, IsArray, IsDateString, IsEnum } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsBoolean, IsArray, IsDateString, IsEnum, ValidateIf, ValidateNested, Matches } from 'class-validator';
+import { Type } from 'class-transformer';
 
 export enum Language {
   ENGLISH = 'ENGLISH',
   HINDI = 'HINDI',
+}
+
+export class EventDateDto {
+  @ApiProperty({ description: 'Event date in MM-DD format', example: '01-26' })
+  @IsString()
+  @IsNotEmpty()
+  @Matches(/^(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$/, {
+    message: 'Date must be in MM-DD format (e.g., 01-26)',
+  })
+  date: string;
+
+  @ApiProperty({ description: 'Event title', example: 'Republic Day Reminder' })
+  @IsString()
+  @IsNotEmpty()
+  title: string;
 }
 
 export class CreateArticleDto {
@@ -105,11 +121,17 @@ export class CreateArticleDto {
   @IsOptional()
   articleDate?: string;
 
-  @ApiProperty({ description: 'Event dates', type: [String], required: false })
-  @IsArray()
-  @IsDateString({}, { each: true })
+  @ApiProperty({ 
+    description: 'Event dates array with date and title', 
+    type: [EventDateDto], 
+    required: false,
+    example: [{ date: '01-26', title: 'Republic Day Reminder' }, { date: '08-15', title: 'Independence Day' }]
+  })
   @IsOptional()
-  eventDates?: string[];
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => EventDateDto)
+  eventDates?: EventDateDto[];
 
   @ApiProperty({ description: 'Event year range', required: false })
   @IsString()

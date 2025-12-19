@@ -223,8 +223,46 @@ CREATE INDEX IF NOT EXISTS "idx_mcq_chapter_id" ON "McqQuestion"("chapterId") WH
 -- Note: Prisma will handle enum constraints when we run prisma migrate
 -- But we can add explicit checks for data integrity
 
-ALTER TABLE "Post" ADD CONSTRAINT "check_language" CHECK ("language" IS NULL OR "language" IN ('ENGLISH', 'HINDI'));
-ALTER TABLE "Post" ADD CONSTRAINT "check_job_type" CHECK ("jobType" IS NULL OR "jobType" IN ('FULL_TIME', 'PART_TIME', 'CONTRACT', 'INTERNSHIP', 'FREELANCE'));
-ALTER TABLE "Post" ADD CONSTRAINT "check_private_filters_year" CHECK ("privateFiltersYear" IS NULL OR "privateFiltersYear" IN ('1', '2', '3', '4'));
+-- Add check_language constraint if it doesn't exist
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint c
+        JOIN pg_class t ON c.conrelid = t.oid
+        WHERE c.conname = 'check_language' 
+        AND t.relname = 'Post'
+    ) THEN
+        ALTER TABLE "Post" ADD CONSTRAINT "check_language" CHECK ("language" IS NULL OR "language" IN ('ENGLISH', 'HINDI'));
+    END IF;
+END $$;
+
+-- Add check_job_type constraint if it doesn't exist
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint c
+        JOIN pg_class t ON c.conrelid = t.oid
+        WHERE c.conname = 'check_job_type' 
+        AND t.relname = 'Post'
+    ) THEN
+        ALTER TABLE "Post" ADD CONSTRAINT "check_job_type" CHECK ("jobType" IS NULL OR "jobType" IN ('FULL_TIME', 'PART_TIME', 'CONTRACT', 'INTERNSHIP', 'FREELANCE'));
+    END IF;
+END $$;
+
+-- Add check_private_filters_year constraint if it doesn't exist
+DO $$ 
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint c
+        JOIN pg_class t ON c.conrelid = t.oid
+        WHERE c.conname = 'check_private_filters_year' 
+        AND t.relname = 'Post'
+    ) THEN
+        ALTER TABLE "Post" ADD CONSTRAINT "check_private_filters_year" CHECK ("privateFiltersYear" IS NULL OR "privateFiltersYear" IN ('1', '2', '3', '4'));
+    END IF;
+END $$;
+
+
+
 
 

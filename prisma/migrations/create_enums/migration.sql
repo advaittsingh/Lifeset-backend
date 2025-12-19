@@ -24,7 +24,22 @@ BEGIN
         AND column_name = 'jobType' 
         AND data_type = 'text'
     ) THEN
-        ALTER TABLE "Post" ALTER COLUMN "jobType" TYPE "JobType" USING "jobType"::"JobType";
+        -- First, ensure all values are valid enum values or NULL
+        UPDATE "Post" 
+        SET "jobType" = NULL 
+        WHERE "jobType" IS NOT NULL 
+        AND "jobType" NOT IN ('FULL_TIME', 'PART_TIME', 'CONTRACT', 'INTERNSHIP', 'FREELANCE');
+        
+        -- Now alter the column type with proper casting (text -> enum)
+        ALTER TABLE "Post" ALTER COLUMN "jobType" TYPE "JobType" 
+        USING CASE 
+            WHEN "jobType" = 'FULL_TIME' THEN 'FULL_TIME'::"JobType"
+            WHEN "jobType" = 'PART_TIME' THEN 'PART_TIME'::"JobType"
+            WHEN "jobType" = 'CONTRACT' THEN 'CONTRACT'::"JobType"
+            WHEN "jobType" = 'INTERNSHIP' THEN 'INTERNSHIP'::"JobType"
+            WHEN "jobType" = 'FREELANCE' THEN 'FREELANCE'::"JobType"
+            ELSE NULL::"JobType"
+        END;
     END IF;
 END $$;
 
@@ -37,7 +52,22 @@ BEGIN
         AND column_name = 'language' 
         AND data_type = 'text'
     ) THEN
-        ALTER TABLE "Post" ALTER COLUMN "language" TYPE "Language" USING "language"::"Language";
+        -- First, ensure all values are valid enum values or NULL
+        UPDATE "Post" 
+        SET "language" = NULL 
+        WHERE "language" IS NOT NULL 
+        AND "language" NOT IN ('ENGLISH', 'HINDI');
+        
+        -- Now alter the column type with proper casting (text -> enum)
+        ALTER TABLE "Post" ALTER COLUMN "language" TYPE "Language" 
+        USING CASE 
+            WHEN "language" = 'ENGLISH' THEN 'ENGLISH'::"Language"
+            WHEN "language" = 'HINDI' THEN 'HINDI'::"Language"
+            ELSE NULL::"Language"
+        END;
     END IF;
 END $$;
+
+
+
 
