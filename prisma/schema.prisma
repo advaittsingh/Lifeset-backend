@@ -268,7 +268,7 @@ model Post {
   updatedAt     DateTime    @updatedAt
 
   // Article fields (Current Affairs & General Knowledge)
-  language              Language?
+  language              String?  // Language enum: 'ENGLISH' | 'HINDI'
   isPublished           Boolean?
   articleId              String?     // Post ID for MCQ linking (self-reference)
   fullArticle           String?      @db.Text
@@ -307,7 +307,7 @@ model Post {
   skills                String[]    // Array of required skills
   jobFunction           String?     // Job function (renamed from 'function' to avoid keyword conflict)
   experience            String?
-  jobType               JobType?
+  jobType               String?  // JobType enum: 'FULL_TIME' | 'PART_TIME' | 'CONTRACT' | 'INTERNSHIP' | 'FREELANCE'
   capacity              String?
   workTime              String?
   perksAndBenefits      String?     @db.Text
