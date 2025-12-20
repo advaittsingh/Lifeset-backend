@@ -166,6 +166,9 @@ export class McqService {
       isCorrect,
       correctAnswer: question.correctAnswer,
       explanation: question.explanation,
+      // Flag to prevent auto-advance - user must click next button
+      shouldAutoAdvance: false,
+      waitForUserAction: true,
     };
   }
 
