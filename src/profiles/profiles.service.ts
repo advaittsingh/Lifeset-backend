@@ -6,28 +6,38 @@ export class ProfilesService {
   constructor(private prisma: PrismaService) {}
 
   async getProfile(userId: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      include: {
-        studentProfile: {
-          include: {
-            college: true,
-            course: true,
-            projects: true,
-            experiences: true,
+    try {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        include: {
+          studentProfile: {
+            include: {
+              college: true,
+              course: true,
+              projects: true,
+              experiences: true,
+            },
           },
+          companyProfile: true,
+          collegeProfile: true,
         },
-        companyProfile: true,
-        collegeProfile: true,
-      },
-    });
+      });
 
-    if (!user) {
-      throw new NotFoundException('User not found');
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+
+      // Return user with studentProfile (preferredLanguage and userStatus are now in schema)
+      return user;
+    } catch (error: any) {
+      // Re-throw known exceptions
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      // Log and wrap unexpected errors
+      console.error('Error fetching user profile:', error);
+      throw new InternalServerErrorException('Failed to fetch user profile. Please try again.');
     }
-
-    // Return user with studentProfile (preferredLanguage and userStatus are now in schema)
-    return user;
   }
 
   async updateBasicInfo(userId: string, data: {

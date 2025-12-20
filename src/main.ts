@@ -41,12 +41,19 @@ async function bootstrap() {
     'http://localhost:3000',
     'http://localhost:5173',
     'http://localhost:8081',
+    'http://localhost:19006', // Expo default
+    'exp://localhost:8081', // Expo
   ];
+  
+  // Allow all origins in development, or specific origins in production
+  const isDevelopment = process.env.NODE_ENV !== 'production';
+  
   app.enableCors({
-    origin: corsOrigins,
+    origin: isDevelopment ? true : corsOrigins, // Allow all origins in dev, specific in prod
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'LYFSET', 'x-api-key', 'api-key'],
+    exposedHeaders: ['Content-Type', 'Authorization'],
   });
 
   // Global prefix

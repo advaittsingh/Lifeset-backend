@@ -99,12 +99,16 @@ export class HttpExceptionFilter implements ExceptionFilter {
       message = error.message || 'Internal server error';
       
       // Provide more helpful error messages for common issues
-      if (error.message?.includes('DATABASE_URL') || error.message?.includes('database')) {
-        message = 'Database configuration error. Please check DATABASE_URL environment variable.';
+      if (error.message?.includes('DATABASE_URL') || error.message?.includes('database') || error.message?.includes('connect ECONNREFUSED')) {
+        message = 'Database connection error. Please check DATABASE_URL environment variable.';
       } else if (error.message?.includes('JWT_SECRET') || error.message?.includes('JWT')) {
         message = 'Authentication configuration error. Please check JWT_SECRET and JWT_REFRESH_SECRET environment variables.';
       } else if (error.message?.includes('Redis') || error.message?.includes('REDIS')) {
         message = 'Redis connection error. The application will continue but some features may be limited.';
+      } else if (error.message?.includes('Network') || error.message?.includes('network') || error.message?.includes('ECONNREFUSED') || error.message?.includes('ETIMEDOUT')) {
+        message = 'Network error. Please check your internet connection and try again.';
+      } else if (error.message?.includes('timeout') || error.message?.includes('TIMEOUT')) {
+        message = 'Request timeout. Please try again.';
       }
     }
 
