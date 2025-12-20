@@ -1,25 +1,31 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, InternalServerErrorException, Logger } from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service';
 
 @Injectable()
 export class McqService {
+  private readonly logger = new Logger(McqService.name);
+
   constructor(private prisma: PrismaService) {}
 
   async getCategories() {
-    // MCQ questions now use WallCategory instead of McqCategory
-    // Filter by categoryFor: 'MCQ' to ensure we only get MCQ categories
-    const categories = await this.prisma.wallCategory.findMany({
-      where: { 
-        isActive: true,
-        // categoryFor removed from schema - using basic query
-        // categoryFor: 'MCQ',
-      },
-      orderBy: { name: 'asc' },
-    });
-    
-    // Return as array for direct consumption
-    // After TransformInterceptor: { success: true, data: [...categories], timestamp: "..." }
-    return categories;
+    try {
+      // MCQ questions use McqCategory model (not WallCategory)
+      const categories = await this.prisma.mcqCategory.findMany({
+        where: { 
+          isActive: true,
+        },
+        orderBy: { name: 'asc' },
+      });
+      
+      this.logger.log(`📚 MCQ found ${categories.length} categories`);
+      
+      // Return as array for direct consumption
+      // After TransformInterceptor: { success: true, data: [...categories], timestamp: "..." }
+      return categories;
+    } catch (error: any) {
+      this.logger.error(`❌ Error fetching MCQ categories: ${error.message}`, error.stack);
+      throw new InternalServerErrorException(`Failed to fetch MCQ categories: ${error.message}`);
+    }
   }
 
   async getQuestions(filters: {
@@ -30,70 +36,93 @@ export class McqService {
     page?: number;
     limit?: number;
   }) {
-    // Log incoming filters for debugging
-    console.log('📝 MCQ getQuestions called with filters:', filters);
+    try {
+      // Log incoming filters for debugging
+      this.logger.log(`📝 MCQ getQuestions called with filters: ${JSON.stringify(filters)}`);
 
-    // Check if pagination was explicitly requested
-    const hasExplicitPagination = filters.page !== undefined || filters.limit !== undefined;
-    
-    const page = parseInt(String(filters.page || 1), 10);
-    // If no categoryId is provided and no limit specified, allow fetching more questions (for "get all" scenario)
-    // Otherwise use default limit of 20
-    const limit = parseInt(String(filters.limit || (filters.categoryId ? 20 : 1000)), 10);
-    const skip = (page - 1) * limit;
+      // Check if pagination was explicitly requested
+      const hasExplicitPagination = filters.page !== undefined || filters.limit !== undefined;
+      
+      const page = parseInt(String(filters.page || 1), 10);
+      // If no categoryId is provided and no limit specified, allow fetching more questions (for "get all" scenario)
+      // Otherwise use default limit of 20
+      const limit = parseInt(String(filters.limit || (filters.categoryId ? 20 : 1000)), 10);
+      const skip = (page - 1) * limit;
 
-    const where: any = {};
+      const where: any = {};
 
-    if (filters.categoryId) {
-      where.categoryId = filters.categoryId;
-    }
+      if (filters.categoryId) {
+        where.categoryId = filters.categoryId;
+      }
 
-    if (filters.difficulty) {
-      where.difficulty = filters.difficulty;
-    }
+      if (filters.difficulty) {
+        where.difficulty = filters.difficulty;
+      }
 
-    if (filters.tags && filters.tags.length > 0) {
-      where.tags = { hasSome: filters.tags };
-    }
+      if (filters.tags && filters.tags.length > 0) {
+        where.tags = { hasSome: filters.tags };
+      }
 
-    if (filters.articleId) {
-      where.articleId = filters.articleId;
-    }
+      if (filters.articleId) {
+        where.articleId = filters.articleId;
+      }
 
-    console.log('🔍 MCQ query where clause:', JSON.stringify(where));
+      this.logger.log(`🔍 MCQ query where clause: ${JSON.stringify(where)}`);
 
-    const [questions, total] = await Promise.all([
-      this.prisma.mcqQuestion.findMany({
-        where,
-        skip,
-        take: limit,
-        include: {
-          category: true,
+      let questions;
+      try {
+        questions = await this.prisma.mcqQuestion.findMany({
+          where,
+          skip,
+          take: limit,
+          include: {
+            category: {
+              select: {
+                id: true,
+                name: true,
+                description: true,
+                isActive: true,
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+        });
+      } catch (includeError: any) {
+        this.logger.warn(`⚠️ Error including category, trying without include: ${includeError.message}`);
+        // Try without category include if it fails (might be due to invalid categoryId)
+        questions = await this.prisma.mcqQuestion.findMany({
+          where,
+          skip,
+          take: limit,
+          orderBy: { createdAt: 'desc' },
+        });
+      }
+
+      const total = await this.prisma.mcqQuestion.count({ where });
+
+      this.logger.log(`✅ MCQ found ${questions.length} questions (total: ${total})`);
+
+      // Always return consistent format for mobile app
+      // Mobile app expects: { success: true, data: [...questions] } or { success: true, data: { data: [...], pagination: {...} } }
+      if (!hasExplicitPagination) {
+        // Return as array for direct consumption
+        return questions;
+      }
+
+      // Return paginated structure
+      return {
+        data: questions,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
         },
-        orderBy: { createdAt: 'desc' },
-      }),
-      this.prisma.mcqQuestion.count({ where }),
-    ]);
-
-    console.log(`✅ MCQ found ${questions.length} questions (total: ${total})`);
-
-    // Always return consistent format for mobile app
-    // Mobile app expects: { success: true, data: [...questions] } or { success: true, data: { data: [...], pagination: {...} } }
-    if (!hasExplicitPagination) {
-      // Return as array for direct consumption
-      return questions;
+      };
+    } catch (error: any) {
+      this.logger.error(`❌ Error fetching MCQ questions: ${error.message}`, error.stack);
+      throw new InternalServerErrorException(`Failed to fetch MCQ questions: ${error.message}`);
     }
-
-    // Return paginated structure
-    return {
-      data: questions,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
   }
 
   async getQuestionById(id: string) {
