@@ -151,19 +151,174 @@ export class PerformanceService {
   }
 
   // ========== Daily Digest Engagement Tracking ==========
-  // Note: Performance meter models removed from schema - these methods are disabled
   async trackEngagement(userId: string, dto: TrackEngagementDto) {
-    throw new BadRequestException('Performance meter functionality is not available in the current schema');
+    // Track card views (duration >= 20 seconds) and MCQ attempts (accuracy >= 50%)
+    // Store engagement data in UserEvent table
+    
+    const eventType = dto.type === EngagementType.CARD_VIEW ? 'feed_view' : 'mcq_attempt';
+    const date = dto.date ? new Date(dto.date) : new Date();
+    
+    // For CARD_VIEW: track if duration >= 20 seconds
+    if (dto.type === EngagementType.CARD_VIEW && dto.duration && dto.duration >= 20) {
+      await this.prisma.userEvent.create({
+        data: {
+          userId,
+          eventType: 'feed_view',
+          metadata: {
+            cardId: dto.cardId,
+            duration: dto.duration,
+            cardType: dto.cardType,
+          },
+          createdAt: date,
+        },
+      });
+    }
+    
+    // For MCQ_ATTEMPT: track if isComplete (accuracy >= 50%)
+    if (dto.type === EngagementType.MCQ_ATTEMPT && dto.isComplete) {
+      await this.prisma.userEvent.create({
+        data: {
+          userId,
+          eventType: 'mcq_attempt',
+          metadata: {
+            cardId: dto.cardId,
+            isCorrect: dto.isComplete,
+            cardType: dto.cardType,
+          },
+          createdAt: date,
+        },
+      });
+    }
+
+    return { success: true, message: 'Engagement tracked successfully' };
   }
 
   // ========== Weekly Performance Meter ==========
   async getWeeklyMeter(userId: string): Promise<WeeklyMeterResponseDto> {
-    throw new BadRequestException('Performance meter functionality is not available in the current schema');
+    // Get last 7 days engagement status
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const sevenDaysAgo = new Date(today);
+    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 6); // Last 7 days including today
+    
+    // Get all events in last 7 days
+    const events = await this.prisma.userEvent.findMany({
+      where: {
+        userId,
+        createdAt: {
+          gte: sevenDaysAgo,
+          lte: new Date(today.getTime() + 24 * 60 * 60 * 1000 - 1), // End of today
+        },
+      },
+    });
+
+    // Group events by date
+    const daysMap = new Map<string, { cardViews: number; mcqAttempts: number; correctMcqs: number }>();
+    
+    // Initialize all 7 days
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(today);
+      date.setDate(date.getDate() - i);
+      const dateStr = date.toISOString().split('T')[0];
+      daysMap.set(dateStr, { cardViews: 0, mcqAttempts: 0, correctMcqs: 0 });
+    }
+
+    // Count events per day
+    events.forEach(event => {
+      const dateStr = event.createdAt.toISOString().split('T')[0];
+      const dayData = daysMap.get(dateStr);
+      if (dayData) {
+        if (event.eventType === 'feed_view') {
+          dayData.cardViews++;
+        } else if (event.eventType === 'mcq_attempt') {
+          dayData.mcqAttempts++;
+          if (event.metadata && (event.metadata as any).isCorrect) {
+            dayData.correctMcqs++;
+          }
+        }
+      }
+    });
+
+    // Build response
+    const days: DayStatusDto[] = [];
+    let daysCompleted = 0;
+
+    for (let i = 6; i >= 0; i--) {
+      const date = new Date(today);
+      date.setDate(date.getDate() - i);
+      const dateStr = date.toISOString().split('T')[0];
+      const dayData = daysMap.get(dateStr) || { cardViews: 0, mcqAttempts: 0, correctMcqs: 0 };
+      
+      const isPresent = dayData.cardViews > 0 || dayData.mcqAttempts > 0;
+      const mcqAccuracy = dayData.mcqAttempts > 0 
+        ? (dayData.correctMcqs / dayData.mcqAttempts) * 100 
+        : 0;
+
+      if (isPresent) daysCompleted++;
+
+      days.push({
+        date: dateStr,
+        isPresent,
+        completed: isPresent,
+        cardViewCount: dayData.cardViews,
+        mcqAttemptCount: dayData.mcqAttempts,
+        mcqAccuracy: Math.round(mcqAccuracy * 100) / 100,
+      });
+    }
+
+    return {
+      daysCompleted,
+      days,
+    };
   }
 
   // ========== User Badge Status ==========
   async getBadgeStatus(userId: string): Promise<BadgeStatusResponseDto> {
-    throw new BadRequestException('Performance meter functionality is not available in the current schema');
+    // Calculate badge based on 6-month activity
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+    sixMonthsAgo.setHours(0, 0, 0, 0);
+
+    // Get all events in last 6 months
+    const events = await this.prisma.userEvent.findMany({
+      where: {
+        userId,
+        createdAt: {
+          gte: sixMonthsAgo,
+        },
+      },
+    });
+
+    // Count unique active days
+    const activeDays = new Set<string>();
+    events.forEach(event => {
+      const dateStr = event.createdAt.toISOString().split('T')[0];
+      activeDays.add(dateStr);
+    });
+
+    const daysActive = activeDays.size;
+
+    // Determine badge based on days active
+    let currentBadge: string | null = null;
+    if (daysActive >= 150) {
+      currentBadge = 'legend';
+    } else if (daysActive >= 120) {
+      currentBadge = 'champion';
+    } else if (daysActive >= 90) {
+      currentBadge = 'elite';
+    } else if (daysActive >= 60) {
+      currentBadge = 'adventurer';
+    } else if (daysActive >= 30) {
+      currentBadge = 'explorer';
+    } else if (daysActive >= 1) {
+      currentBadge = 'rookie';
+    }
+
+    return {
+      currentBadge,
+      daysActive,
+    };
   }
 }
 

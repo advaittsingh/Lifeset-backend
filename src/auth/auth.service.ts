@@ -268,15 +268,28 @@ export class AuthService {
   }
 
   async generateOtp(emailOrMobile: string, apiKey?: string) {
+    // Normalize phone number formats: 9876543210, 919876543210, +919876543210
+    let normalizedPhone = emailOrMobile.replace(/[^0-9+]/g, ''); // Remove non-digit/non-plus chars
+    
+    // Handle different phone formats
+    if (normalizedPhone.startsWith('+91')) {
+      normalizedPhone = normalizedPhone.substring(3); // Remove +91
+    } else if (normalizedPhone.startsWith('91') && normalizedPhone.length === 12) {
+      normalizedPhone = normalizedPhone.substring(2); // Remove 91 prefix
+    } else if (normalizedPhone.startsWith('0')) {
+      normalizedPhone = normalizedPhone.substring(1); // Remove leading 0
+    }
+    
+    // Validate phone number (must be 10 digits for India)
+    if (!/^[0-9]{10}$/.test(normalizedPhone)) {
+      throw new BadRequestException('Invalid phone number format. Expected 10-digit number or formats: 9876543210, 919876543210, +919876543210');
+    }
+    
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    const key = `otp:${emailOrMobile}`;
+    const key = `otp:${normalizedPhone}`;
     
     // Store OTP in Redis with 10 minute expiration
     await this.redis.set(key, otp, 600);
-
-    // Determine if it's email or mobile
-    const isEmail = emailOrMobile.includes('@');
-    const isMobile = /^[0-9]{10,15}$/.test(emailOrMobile.replace(/[^0-9]/g, ''));
 
     // Get OTP API configuration
     // Priority: provided apiKey > environment variable > default
@@ -293,19 +306,10 @@ export class AuthService {
     }
 
     try {
-      // Send OTP via API
-      if (isMobile) {
-        // Send SMS OTP
-        await this.sendSmsOtp(emailOrMobile, otp, otpApiKey, otpApiUrl);
-      } else if (isEmail) {
-        // Send Email OTP
-        await this.sendEmailOtp(emailOrMobile, otp, otpApiKey, otpApiUrl);
-      } else {
-        this.logger.warn(`Invalid email or mobile format: ${emailOrMobile}`);
-        // Still store OTP for testing purposes
-      }
+      // Send SMS OTP (phone-only, email OTP removed)
+      await this.sendSmsOtp(normalizedPhone, otp, otpApiKey, otpApiUrl);
 
-      this.logger.log(`OTP generated and sent to ${emailOrMobile?.substring(0, 3)}***`);
+      this.logger.log(`OTP generated and sent to ${normalizedPhone?.substring(0, 3)}***`);
       return { success: true, message: 'OTP sent successfully' };
     } catch (error: any) {
       this.logger.error(`Failed to send OTP: ${error.message}`, error.stack);
@@ -328,16 +332,8 @@ export class AuthService {
 
   private async sendSmsOtp(mobile: string, otp: string, apiKey: string, apiUrl: string) {
     try {
-      // Clean mobile number (remove non-digits)
-      let cleanMobile = mobile.replace(/[^0-9]/g, '');
-      
-      // For messageindia.in API, use 10-digit number (no country code needed for India)
-      // Remove country code if present
-      if (cleanMobile.startsWith('91') && cleanMobile.length === 12) {
-        cleanMobile = cleanMobile.substring(2); // Remove 91 prefix
-      } else if (cleanMobile.startsWith('0')) {
-        cleanMobile = cleanMobile.substring(1); // Remove leading 0
-      }
+      // Mobile number is already normalized in generateOtp, but ensure it's 10 digits
+      const cleanMobile = mobile.replace(/[^0-9]/g, '');
       
       // Ensure it's 10 digits
       if (cleanMobile.length !== 10) {
@@ -542,7 +538,21 @@ export class AuthService {
   }
 
   async verifyOtp(emailOrMobile: string, otp: string) {
-    const key = `otp:${emailOrMobile}`;
+    // Normalize phone number (same logic as generateOtp)
+    let normalizedPhone = emailOrMobile.replace(/[^0-9+]/g, '');
+    if (normalizedPhone.startsWith('+91')) {
+      normalizedPhone = normalizedPhone.substring(3);
+    } else if (normalizedPhone.startsWith('91') && normalizedPhone.length === 12) {
+      normalizedPhone = normalizedPhone.substring(2);
+    } else if (normalizedPhone.startsWith('0')) {
+      normalizedPhone = normalizedPhone.substring(1);
+    }
+    
+    if (!/^[0-9]{10}$/.test(normalizedPhone)) {
+      throw new BadRequestException('Invalid phone number format');
+    }
+
+    const key = `otp:${normalizedPhone}`;
     const storedOtp = await this.redis.get(key);
 
     if (!storedOtp || storedOtp !== otp) {
@@ -552,7 +562,77 @@ export class AuthService {
     // Delete OTP after verification
     await this.redis.del(key);
 
-    return { success: true, message: 'OTP verified' };
+    // Find or create user
+    let user = await this.prisma.user.findUnique({
+      where: { mobile: normalizedPhone },
+      include: {
+        studentProfile: true,
+      },
+    });
+
+    // Auto-create user if doesn't exist
+    if (!user) {
+      user = await this.prisma.user.create({
+        data: {
+          mobile: normalizedPhone,
+          password: '', // No password for OTP-based auth
+          userType: 'STUDENT',
+          isActive: true,
+          isVerified: true,
+          studentProfile: {
+            create: {
+              firstName: '',
+              lastName: '',
+            },
+          },
+        },
+        include: {
+          studentProfile: true,
+        },
+      });
+      this.logger.log(`Auto-created user for mobile: ${normalizedPhone.substring(0, 3)}***`);
+    } else {
+      // Mark user as verified if not already
+      if (!user.isVerified) {
+        user = await this.prisma.user.update({
+          where: { id: user.id },
+          data: { isVerified: true },
+          include: {
+            studentProfile: true,
+          },
+        });
+      }
+    }
+
+    // Generate tokens
+    const tokens = await this.generateTokens(user);
+
+    // Return user object and tokens
+    return {
+      success: true,
+      data: {
+        user: {
+          id: user.id,
+          email: user.email,
+          mobile: user.mobile,
+          userType: user.userType,
+          isActive: user.isActive,
+          isVerified: user.isVerified,
+          profileImage: user.profileImage,
+          studentProfile: user.studentProfile ? {
+            id: user.studentProfile.id,
+            firstName: user.studentProfile.firstName,
+            lastName: user.studentProfile.lastName,
+            preferredLanguage: (user.studentProfile as any).preferredLanguage || null,
+            userStatus: (user.studentProfile as any).userStatus || null,
+          } : null,
+          createdAt: user.createdAt,
+          updatedAt: user.updatedAt,
+        },
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+      },
+    };
   }
 
   async generateTokens(user: any) {
