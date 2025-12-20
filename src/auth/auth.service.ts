@@ -751,15 +751,28 @@ export class AuthService {
 
   async validateUser(userId: string) {
     try {
-    return this.prisma.user.findUnique({
-      where: { id: userId },
-      include: {
-        studentProfile: true,
-        companyProfile: true,
-        collegeProfile: true,
-        adminProfile: true,
-      },
-    });
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        include: {
+          studentProfile: true,
+          companyProfile: true,
+          collegeProfile: true,
+          adminProfile: true,
+        },
+      });
+
+      if (!user) {
+        throw new UnauthorizedException('User not found');
+      }
+
+      return user;
+    } catch (error: any) {
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
+      this.logger.error(`Error validating user ${userId}:`, error);
+      throw new InternalServerErrorException('Failed to validate user. Please try again.');
+    }
   }
 }
 
