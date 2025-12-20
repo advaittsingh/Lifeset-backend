@@ -3,6 +3,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { ProfilesService } from './profiles.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { UpdatePreferencesDto } from './dto/update-preferences.dto';
 
 @ApiTags('Profiles')
 @Controller('profiles')
@@ -61,7 +62,7 @@ export class ProfilesController {
 
   @Put('me/preferences')
   @ApiOperation({ summary: 'Update user preferences (preferredLanguage, userStatus)' })
-  async updatePreferences(@CurrentUser() user: any, @Body() data: { preferredLanguage?: string; userStatus?: string }) {
+  async updatePreferences(@CurrentUser() user: any, @Body() data: UpdatePreferencesDto) {
     return this.profilesService.updatePreferences(user.id, data);
   }
 }

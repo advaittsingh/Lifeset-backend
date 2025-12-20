@@ -26,18 +26,7 @@ export class ProfilesService {
       throw new NotFoundException('User not found');
     }
 
-    // Add preferredLanguage and userStatus to studentProfile if it exists
-    if (user.studentProfile) {
-      return {
-        ...user,
-        studentProfile: {
-          ...user.studentProfile,
-          preferredLanguage: (user.studentProfile as any).preferredLanguage || null,
-          userStatus: (user.studentProfile as any).userStatus || null,
-        },
-      };
-    }
-
+    // Return user with studentProfile (preferredLanguage and userStatus are now in schema)
     return user;
   }
 
@@ -391,7 +380,7 @@ export class ProfilesService {
     });
   }
 
-  async updatePreferences(userId: string, data: { preferredLanguage?: string; userStatus?: string }) {
+  async updatePreferences(userId: string, data: { preferredLanguage?: string; userStatus?: 'school' | 'college' | 'working_professional' }): Promise<{ success: boolean; data: any }> {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       include: { studentProfile: true },
@@ -410,17 +399,30 @@ export class ProfilesService {
       throw new NotFoundException('Student profile not found');
     }
 
-    // Store preferences in studentProfile metadata (JSON field)
-    // Since preferredLanguage and userStatus are not in schema, we'll use a metadata approach
-    // For now, we'll update the profile and return it
-    // In a real implementation, you might want to add these fields to the schema
-    
-    // Update student profile (we'll store in a way that can be retrieved)
+    // Validate userStatus if provided
+    if (data.userStatus && !['school', 'college', 'working_professional'].includes(data.userStatus)) {
+      throw new BadRequestException('userStatus must be one of: school, college, working_professional');
+    }
+
+    // Convert lowercase string to enum value
+    // 'school' -> 'SCHOOL', 'college' -> 'COLLEGE', 'working_professional' -> 'WORKING_PROFESSIONAL'
+    let userStatusEnum: 'SCHOOL' | 'COLLEGE' | 'WORKING_PROFESSIONAL' | undefined = undefined;
+    if (data.userStatus) {
+      if (data.userStatus === 'school') {
+        userStatusEnum = 'SCHOOL';
+      } else if (data.userStatus === 'college') {
+        userStatusEnum = 'COLLEGE';
+      } else if (data.userStatus === 'working_professional') {
+        userStatusEnum = 'WORKING_PROFESSIONAL';
+      }
+    }
+
+    // Update student profile
     const updated = await this.prisma.studentProfile.update({
       where: { userId },
       data: {
-        // Note: If schema had preferredLanguage and userStatus fields, we'd update them here
-        // For now, we'll just return success - you may want to add these fields to schema
+        preferredLanguage: data.preferredLanguage !== undefined ? data.preferredLanguage : undefined,
+        userStatus: userStatusEnum,
       },
     });
 
@@ -434,14 +436,7 @@ export class ProfilesService {
 
     return {
       success: true,
-      data: {
-        ...updatedUser,
-        studentProfile: updatedUser?.studentProfile ? {
-          ...updatedUser.studentProfile,
-          preferredLanguage: data.preferredLanguage || null,
-          userStatus: data.userStatus || null,
-        } : null,
-      },
+      data: updatedUser,
     };
   }
 }

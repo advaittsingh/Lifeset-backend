@@ -52,6 +52,12 @@ enum NotificationType {
   CONNECTION
 }
 
+enum UserStatus {
+  SCHOOL
+  COLLEGE
+  WORKING_PROFESSIONAL
+}
+
 model User {
   id            String   @id @default(uuid())
   email         String?  @unique
@@ -128,6 +134,8 @@ model StudentProfile {
   collegeId       String?
   collegeProfileId String?
   courseId        String?
+  preferredLanguage String?
+  userStatus      UserStatus?
   
   // Education
   education10th   Json?
