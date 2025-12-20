@@ -354,11 +354,25 @@ export class AuthService {
       const username = this.configService.get<string>('SMS_USERNAME') || 'parmaramritesh';
       const senderName = this.configService.get<string>('SMS_SENDER_NAME') || 'LYFSET'; // Approved sender name from dashboard
       const smsType = this.configService.get<string>('SMS_TYPE') || 'TRANS';
-      const peid = this.configService.get<string>('SMS_PEID'); // Optional
-      const templateId = this.configService.get<string>('SMS_TEMPLATE_ID'); // Optional
+      const peid = this.configService.get<string>('SMS_PEID') || '1201159481002695971'; // DLT Principal Entity ID (default from dashboard)
+      const templateId = this.configService.get<string>('SMS_TEMPLATE_ID') || '1207176589684893756'; // DLT Template ID (default: User Registration OTP 2026)
       
       // Build OTP message
-      const message = `Your OTP for LifeSet is ${otp}. It is valid for 10 minutes.`;
+      // Note: When using DLT template (templateid), message must match template body exactly
+      // messageindia.in templates use {#var#} placeholder - replace it with actual OTP value
+      // Template "User Registration OTP 2026" body format needs to be matched exactly
+      // Common format: "Dear User, {#var#} is your OTP..." -> "Dear User, 123456 is your OTP..."
+      const message = templateId 
+        ? `Dear User, ${otp} is your OTP for registration on LifeSet.co.in Platform.`  // Match template format
+        : `Your OTP for LifeSet is ${otp}. It is valid for 10 minutes.`;
+      
+      // Log DLT configuration
+      if (peid && templateId) {
+        this.logger.log(`📋 DLT Configuration: PEID=${peid}, TemplateID=${templateId}`);
+      } else {
+        this.logger.warn(`⚠️ DLT Parameters Missing: PEID=${!!peid}, TemplateID=${!!templateId}`);
+        this.logger.warn(`   SMS may be undelivered. For India, DLT registration is mandatory.`);
+      }
       
       // Build query parameters
       const params = new URLSearchParams({
@@ -428,8 +442,38 @@ export class AuthService {
         
         // Log success or error
         if (response.status === 200 && status === 'success') {
-          this.logger.log(`✅ SMS OTP sent successfully to ${cleanMobile.substring(0, 3)}***`);
+          this.logger.log(`✅ SMS OTP submitted successfully to ${cleanMobile.substring(0, 3)}***`);
           this.logger.log(`Message ID: ${msgId || 'N/A'}, Cost: ${statusObj?.cost || 'N/A'}`);
+          
+          // Check delivery status after a short delay (optional - can be done async)
+          if (msgId) {
+            this.logger.log(`📱 Check delivery status: http://sms.messageindia.in/getDLR?username=${username}&msgid=${msgId}&apikey=${apiKey.substring(0, 10)}...`);
+            
+            // Check delivery status after 2 seconds
+            setTimeout(async () => {
+              try {
+                const dlrUrl = `http://sms.messageindia.in/getDLR?username=${username}&msgid=${msgId}&apikey=${apiKey}`;
+                const dlrResponse = await axios.get(dlrUrl, { timeout: 5000 });
+                const dlrData = Array.isArray(dlrResponse.data) ? dlrResponse.data[0] : dlrResponse.data;
+                const dlrStatus = dlrData?.dlr_status || 'UNKNOWN';
+                
+                if (dlrStatus === 'DELIVRD') {
+                  this.logger.log(`✅ SMS Delivered: Message ID ${msgId}`);
+                } else if (dlrStatus === 'UNDELIV') {
+                  this.logger.error(`❌ SMS Undelivered: Message ID ${msgId}`);
+                  this.logger.error(`   Possible reasons:`);
+                  this.logger.error(`   1. DLT registration required (PEID/Template ID)`);
+                  this.logger.error(`   2. Invalid mobile number`);
+                  this.logger.error(`   3. Carrier blocking`);
+                  this.logger.error(`   4. Mobile number not active`);
+                } else {
+                  this.logger.warn(`⚠️ SMS Delivery Status: ${dlrStatus} (Message ID: ${msgId})`);
+                }
+              } catch (dlrError: any) {
+                this.logger.warn(`Could not check delivery status: ${dlrError.message}`);
+              }
+            }, 2000);
+          }
         } else {
           const errorMsg = `❌ SMS API Error: ${message}`;
           this.logger.error(errorMsg, {
