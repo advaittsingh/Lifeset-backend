@@ -352,18 +352,21 @@ export class AuthService {
       // Parameters: username, message, sendername, smstype, numbers, apikey, peid (optional), templateid (optional)
       
       const username = this.configService.get<string>('SMS_USERNAME') || 'parmaramritesh';
-      const senderName = this.configService.get<string>('SMS_SENDER_NAME') || 'LYFSET'; // Approved sender name from dashboard
+      // Use FFLSet as default - it's delivering successfully (DELIVRD status)
+      // LYFSET sender name has DLT configuration issues causing UNDELIV
+      const senderName = this.configService.get<string>('SMS_SENDER_NAME') || 'FFLSet'; // Working sender name (DELIVRD)
       const smsType = this.configService.get<string>('SMS_TYPE') || 'TRANS';
       const peid = this.configService.get<string>('SMS_PEID') || '1201159481002695971'; // DLT Principal Entity ID (default from dashboard)
-      const templateId = this.configService.get<string>('SMS_TEMPLATE_ID') || '1207176589684893756'; // DLT Template ID (default: User Registration OTP 2026)
+      // Use FFLSet template ID - check dashboard for correct template ID for FFLSet sender
+      const templateId = this.configService.get<string>('SMS_TEMPLATE_ID') || '1207169840835799494'; // FFLSet template ID (working)
       
       // Build OTP message
       // Note: When using DLT template (templateid), message must match template body exactly
       // messageindia.in templates use {#var#} placeholder - replace it with actual OTP value
-      // Template "User Registration OTP 2026" body format needs to be matched exactly
-      // Common format: "Dear User, {#var#} is your OTP..." -> "Dear User, 123456 is your OTP..."
+      // FFLSet template format: "Dear User, {#var#} is your OTP for registration on LifeSet.co.in Platform."
+      // This format is working and delivering successfully (DELIVRD status)
       const message = templateId 
-        ? `Dear User, ${otp} is your OTP for registration on LifeSet.co.in Platform.`  // Match template format
+        ? `Dear User, ${otp} is your OTP for registration on LifeSet.co.in Platform.`  // Match FFLSet template format (working)
         : `Your OTP for LifeSet is ${otp}. It is valid for 10 minutes.`;
       
       // Log DLT configuration
