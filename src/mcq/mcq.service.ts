@@ -11,7 +11,8 @@ export class McqService {
     const categories = await this.prisma.wallCategory.findMany({
       where: { 
         isActive: true,
-        categoryFor: 'MCQ',
+        // categoryFor removed from schema - using basic query
+        // categoryFor: 'MCQ',
       },
       orderBy: { name: 'asc' },
     });

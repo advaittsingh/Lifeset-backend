@@ -17,10 +17,8 @@ export async function updateCategoryPostCount(
       },
     });
 
-    await prisma.wallCategory.update({
-      where: { id: categoryId },
-      data: { postCount: count },
-    });
+    // postCount removed from schema - count is calculated dynamically
+    // No update needed as postCount is not stored
   } catch (error) {
     // Log but don't fail if category doesn't exist
     console.warn(`Failed to update postCount for category ${categoryId}:`, error);

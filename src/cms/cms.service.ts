@@ -78,10 +78,11 @@ export class CmsService {
       throw new NotFoundException('Current affair not found');
     }
 
-    // All fields are now columns, return as-is
+    // Return post with metadata fields extracted
+    const metadata = post.metadata as any || {};
     return {
       ...post,
-      isPublished: post.isPublished !== undefined ? post.isPublished : post.isActive,
+      isPublished: metadata.isPublished !== undefined ? metadata.isPublished : post.isActive,
     };
   }
 
@@ -89,7 +90,7 @@ export class CmsService {
     const where: any = { 
       postType: 'COLLEGE_FEED',
       isActive: true,
-      articleType: 'GENERAL_KNOWLEDGE', // Filter by articleType column
+      // Note: articleType filtering removed - all COLLEGE_FEED posts are returned
     };
     if (filters?.categoryId) where.categoryId = filters.categoryId;
     if (filters?.search) {
@@ -131,7 +132,7 @@ export class CmsService {
         id,
         postType: 'COLLEGE_FEED',
         isActive: true,
-        articleType: 'GENERAL_KNOWLEDGE', // Filter by articleType column
+        // Note: articleType filtering removed
       },
       include: { user: true, category: true },
     });
@@ -140,10 +141,11 @@ export class CmsService {
       throw new NotFoundException('General knowledge article not found');
     }
 
-    // All fields are now columns, return as-is
+    // Return post with metadata fields extracted
+    const metadata = post.metadata as any || {};
     return {
       ...post,
-      isPublished: post.isPublished !== undefined ? post.isPublished : post.isActive,
+      isPublished: metadata.isPublished !== undefined ? metadata.isPublished : post.isActive,
     };
   }
 }

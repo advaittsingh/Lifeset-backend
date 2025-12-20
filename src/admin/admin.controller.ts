@@ -481,8 +481,6 @@ export class AdminController {
         title: data.title,
         message: data.message,
         type: data.type as NotificationType,
-        redirectUrl: data.redirectUrl,
-        image: data.image,
       }));
       
       return this.prisma.notification.createMany({
@@ -495,8 +493,6 @@ export class AdminController {
           title: data.title,
           message: data.message,
           type: data.type as NotificationType,
-          redirectUrl: data.redirectUrl,
-          image: data.image,
         },
       });
     }

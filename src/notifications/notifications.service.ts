@@ -17,8 +17,6 @@ export class NotificationsService {
     title: string;
     message: string;
     type: NotificationType;
-    redirectUrl?: string;
-    image?: string;
   }) {
     const notification = await this.prisma.notification.create({
       data: {
@@ -26,8 +24,6 @@ export class NotificationsService {
         title: data.title,
         message: data.message,
         type: data.type,
-        redirectUrl: data.redirectUrl,
-        image: data.image,
       },
     });
 
@@ -37,9 +33,7 @@ export class NotificationsService {
       body: data.message,
       data: { 
         type: data.type,
-        redirectUrl: data.redirectUrl,
       },
-      image: data.image,
     });
 
     return notification;

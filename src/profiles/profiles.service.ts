@@ -334,23 +334,35 @@ export class ProfilesService {
       // Create new experiences
       if (Array.isArray(experiencesToCreate) && experiencesToCreate.length > 0) {
         await this.prisma.experience.createMany({
-          data: experiencesToCreate.map((exp: any) => ({
-            studentId: updated.id,
-            companyName: exp.companyName,
-            isFacultyMember: exp.isFacultyMember || false,
-            location: exp.location,
-            department: exp.department,
-            designation: exp.designation,
-            currentlyWorking: exp.currentlyWorking || false,
-            startMonthYear: exp.startMonthYear,
-            endMonthYear: exp.endMonthYear,
-            aboutRole: exp.aboutRole,
-            // Map legacy fields if needed
-            title: exp.designation || exp.title,
-            company: exp.companyName || exp.company,
-            description: exp.aboutRole || exp.description,
-            isCurrent: exp.currentlyWorking || exp.isCurrent || false,
-          })),
+          data: experiencesToCreate.map((exp: any) => {
+            // Parse startMonthYear to startDate (DateTime)
+            let startDate = new Date();
+            if (exp.startMonthYear) {
+              const [month, year] = exp.startMonthYear.split('/');
+              startDate = new Date(parseInt(year), parseInt(month) - 1, 1);
+            } else if (exp.startDate) {
+              startDate = new Date(exp.startDate);
+            }
+
+            // Parse endMonthYear to endDate (DateTime) if provided
+            let endDate: Date | null = null;
+            if (exp.endMonthYear) {
+              const [month, year] = exp.endMonthYear.split('/');
+              endDate = new Date(parseInt(year), parseInt(month) - 1, 1);
+            } else if (exp.endDate) {
+              endDate = new Date(exp.endDate);
+            }
+
+            return {
+              studentId: updated.id,
+              title: exp.designation || exp.title || 'Untitled',
+              company: exp.companyName || exp.company || null,
+              description: exp.aboutRole || exp.description || null,
+              startDate,
+              endDate,
+              isCurrent: exp.currentlyWorking || exp.isCurrent || false,
+            };
+          }),
         });
       }
     }
@@ -382,23 +394,9 @@ export class ProfilesService {
       throw new BadRequestException('User is not a student');
     }
 
-    // Use upsert to create profile if it doesn't exist, or update if it does
-    const updated = await this.prisma.studentProfile.upsert({
-      where: { userId },
-      update: {
-        ...(data.preferredLanguage !== undefined && { preferredLanguage: data.preferredLanguage }),
-        ...(data.userStatus !== undefined && { userStatus: data.userStatus }),
-      },
-      create: {
-        userId,
-        firstName: '', // Required field, will be updated later
-        lastName: '', // Required field, will be updated later
-        ...(data.preferredLanguage !== undefined && { preferredLanguage: data.preferredLanguage }),
-        ...(data.userStatus !== undefined && { userStatus: data.userStatus }),
-      },
-    });
-
-    return updated;
+    // Note: preferredLanguage and userStatus fields removed from schema
+    // These preferences can be stored in metadata if needed
+    throw new BadRequestException('User preferences functionality is not available in the current schema');
   }
 }
 
