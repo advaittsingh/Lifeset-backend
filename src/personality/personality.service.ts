@@ -22,6 +22,16 @@ export class PersonalityService {
       where: { isActive: true },
       orderBy: { order: 'asc' },
       take: 20,
+      select: {
+        id: true,
+        question: true,
+        options: true,
+        imageUrl: true,
+        order: true,
+        isActive: true,
+        createdAt: true,
+        updatedAt: true,
+      },
     });
 
     if (questions.length === 0) {
@@ -29,7 +39,13 @@ export class PersonalityService {
       return this.getDefaultQuestions();
     }
 
-    return { questions };
+    // Ensure imageUrl is included in response (even if null)
+    const questionsWithImages = questions.map(q => ({
+      ...q,
+      imageUrl: q.imageUrl || null, // Explicitly include imageUrl
+    }));
+
+    return { questions: questionsWithImages };
   }
 
   async evaluateAnswers(userId: string, answers: Record<string, number>) {
@@ -229,6 +245,16 @@ Respond in JSON format:
       },
       orderBy: { order: 'asc' },
       take: 2,
+      select: {
+        id: true,
+        question: true,
+        options: true,
+        imageUrl: true,
+        order: true,
+        isActive: true,
+        createdAt: true,
+        updatedAt: true,
+      },
     });
 
     // If we don't have enough unanswered questions, return any 2 active questions
@@ -237,10 +263,31 @@ Respond in JSON format:
         where: { isActive: true },
         orderBy: { order: 'asc' },
         take: 2,
+        select: {
+          id: true,
+          question: true,
+          options: true,
+          imageUrl: true,
+          order: true,
+          isActive: true,
+          createdAt: true,
+          updatedAt: true,
+        },
       });
-      return { questions: allQuestions };
+      // Ensure imageUrl is included
+      const questionsWithImages = allQuestions.map(q => ({
+        ...q,
+        imageUrl: q.imageUrl || null,
+      }));
+      return { questions: questionsWithImages };
     }
 
-    return { questions };
+    // Ensure imageUrl is included
+    const questionsWithImages = questions.map(q => ({
+      ...q,
+      imageUrl: q.imageUrl || null,
+    }));
+
+    return { questions: questionsWithImages };
   }
 }

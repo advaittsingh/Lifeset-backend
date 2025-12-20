@@ -939,6 +939,7 @@ model PersonalityQuiz {
   id        String   @id @default(uuid())
   question  String   @db.Text
   options   Json // Array of options
+  imageUrl  String? // Image URL for the question
   order     Int
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
