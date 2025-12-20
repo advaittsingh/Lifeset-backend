@@ -352,21 +352,19 @@ export class AuthService {
       // Parameters: username, message, sendername, smstype, numbers, apikey, peid (optional), templateid (optional)
       
       const username = this.configService.get<string>('SMS_USERNAME') || 'parmaramritesh';
-      // Use FFLSet as default - it's delivering successfully (DELIVRD status)
-      // LYFSET sender name has DLT configuration issues causing UNDELIV
-      const senderName = this.configService.get<string>('SMS_SENDER_NAME') || 'FFLSet'; // Working sender name (DELIVRD)
+      // Use LYFSET sender name with its DLT template
+      const senderName = this.configService.get<string>('SMS_SENDER_NAME') || 'LYFSET';
       const smsType = this.configService.get<string>('SMS_TYPE') || 'TRANS';
-      const peid = this.configService.get<string>('SMS_PEID') || '1201159481002695971'; // DLT Principal Entity ID (default from dashboard)
-      // Use FFLSet template ID - check dashboard for correct template ID for FFLSet sender
-      const templateId = this.configService.get<string>('SMS_TEMPLATE_ID') || '1207169840835799494'; // FFLSet template ID (working)
+      const peid = this.configService.get<string>('SMS_PEID') || '1201159481002695971'; // DLT Principal Entity ID
+      // LYFSET template: User Registration OTP 2026
+      const templateId = this.configService.get<string>('SMS_TEMPLATE_ID') || '1207176589684893756'; // LYFSET template ID
       
       // Build OTP message
       // Note: When using DLT template (templateid), message must match template body exactly
       // messageindia.in templates use {#var#} placeholder - replace it with actual OTP value
-      // FFLSet template format: "Dear User, {#var#} is your OTP for registration on LifeSet.co.in Platform."
-      // This format is working and delivering successfully (DELIVRD status)
+      // LYFSET template format: "Welcome to LifeSet. Your one-time password for registration is: {#var#}. Use this OTP for verification. Regards, Team LifeSet."
       const message = templateId 
-        ? `Dear User, ${otp} is your OTP for registration on LifeSet.co.in Platform.`  // Match FFLSet template format (working)
+        ? `Welcome to LifeSet. Your one-time password for registration is: ${otp}. Use this OTP for verification. Regards, Team LifeSet.`  // Match LYFSET template format
         : `Your OTP for LifeSet is ${otp}. It is valid for 10 minutes.`;
       
       // Log DLT configuration
