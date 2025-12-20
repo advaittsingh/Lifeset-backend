@@ -189,7 +189,16 @@ export class ProfilesService {
       throw new BadRequestException('User is not a student');
     }
 
-    // Extract nested fields and arrays
+    // Define valid StudentProfile fields from schema
+    const validFields = [
+      'firstName', 'lastName', 'dateOfBirth', 'gender', 'address', 'city', 'state', 'pincode',
+      'profileImage', 'voiceRecording', 'profileScore', 'collegeId', 'collegeProfileId', 'courseId',
+      'preferredLanguage', 'userStatus',
+      'education10th', 'education12th', 'graduation', 'postGraduation',
+      'technicalSkills', 'softSkills'
+    ];
+
+    // Extract nested fields and arrays (not direct StudentProfile fields)
     const {
       nativeAddress,
       currentAddress,
@@ -206,66 +215,97 @@ export class ProfilesService {
       professionalSkills,
       internSwitch,
       mentorFor,
+      profilePicture, // Map to profileImage
+      languageKnown, // Map to preferredLanguage
+      category, // Not in schema - ignore
+      religion, // Not in schema - ignore
+      fatherName, // Not in schema - ignore
+      fatherHighestDegree, // Not in schema - ignore
+      fatherOccupation, // Not in schema - ignore
+      motherName, // Not in schema - ignore
+      motherHighestDegree, // Not in schema - ignore
+      motherOccupation, // Not in schema - ignore
       ...profileData
     } = data;
 
-    // Update basic profile fields
-    // Note: firstName and lastName are required for StudentProfile
-    // If profile doesn't exist and these aren't provided, we'll use empty strings (should be provided by client)
-    const updateData: any = { 
-      ...profileData,
-      // Set firstName and lastName - use provided values or keep existing if updating
-      ...(firstName !== undefined && { firstName }),
-      ...(lastName !== undefined && { lastName }),
-      // Handle dateOfBirth - convert from string (YYYY-MM-DD) to Date if provided
-      ...(dateOfBirth !== undefined && { 
-        dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null 
-      }),
-    };
+    // Filter and map profile data - only include valid fields
+    const updateData: any = {};
+    
+    // Map profilePicture to profileImage
+    if (profilePicture !== undefined) {
+      updateData.profileImage = profilePicture || null;
+    }
+    
+    // Map languageKnown to preferredLanguage
+    if (languageKnown !== undefined) {
+      updateData.preferredLanguage = languageKnown || null;
+    }
 
-    // Handle addresses if provided (store as JSON)
-    if (nativeAddress !== undefined) {
-      updateData.nativeAddress = nativeAddress;
+    // Only include valid fields from profileData
+    for (const [key, value] of Object.entries(profileData)) {
+      if (validFields.includes(key)) {
+        // Convert empty strings to null for optional fields
+        if (value === '' && key !== 'firstName' && key !== 'lastName') {
+          updateData[key] = null;
+        } else {
+          updateData[key] = value;
+        }
+      }
+      // Ignore unknown fields (category, religion, fatherName, etc.)
     }
-    if (currentAddress !== undefined) {
-      updateData.currentAddress = currentAddress;
+
+    // Handle firstName and lastName - required fields, but allow empty strings for partial saves
+    if (firstName !== undefined) {
+      updateData.firstName = firstName || '';
     }
+    if (lastName !== undefined) {
+      updateData.lastName = lastName || '';
+    }
+
+    // Handle dateOfBirth - convert from string (YYYY-MM-DD) to Date if provided
+    if (dateOfBirth !== undefined) {
+      updateData.dateOfBirth = dateOfBirth ? new Date(dateOfBirth) : null;
+    }
+
+    // Handle userStatus conversion if provided
+    if (updateData.userStatus && typeof updateData.userStatus === 'string') {
+      const statusLower = updateData.userStatus.toLowerCase();
+      if (statusLower === 'school') {
+        updateData.userStatus = 'SCHOOL';
+      } else if (statusLower === 'college') {
+        updateData.userStatus = 'COLLEGE';
+      } else if (statusLower === 'working_professional') {
+        updateData.userStatus = 'WORKING_PROFESSIONAL';
+      }
+    }
+
+    // Handle addresses if provided (store as JSON in education fields if needed)
+    // Note: nativeAddress and currentAddress are not in schema, so we'll skip them
+    // If you need to store them, consider adding to schema or storing in metadata
 
     // For create operation, ensure firstName and lastName exist
     const createData: any = {
       userId,
-      firstName: firstName || '',
-      lastName: lastName || '',
-      // Handle dateOfBirth in create data
-      ...(dateOfBirth !== undefined && { 
-        dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null 
-      }),
+      firstName: updateData.firstName !== undefined ? updateData.firstName : (firstName || ''),
+      lastName: updateData.lastName !== undefined ? updateData.lastName : (lastName || ''),
       ...updateData,
     };
 
-    // Handle education array if provided (store as JSON)
+    // Handle education fields if provided (store as JSON)
+    // Note: These fields are in schema as education10th, education12th, graduation, postGraduation
     if (education !== undefined) {
-      updateData.education = education;
+      // If education is an object with specific fields, map them
+      if (typeof education === 'object' && education !== null) {
+        if (education.education10th !== undefined) updateData.education10th = education.education10th;
+        if (education.education12th !== undefined) updateData.education12th = education.education12th;
+        if (education.graduation !== undefined) updateData.graduation = education.graduation;
+        if (education.postGraduation !== undefined) updateData.postGraduation = education.postGraduation;
+      }
     }
 
-    // Handle competitive exams array if provided (store as JSON)
-    if (competitiveExams !== undefined) {
-      updateData.competitiveExams = competitiveExams;
-    }
-
-    // Handle skills arrays if provided
-    if (interestHobbies !== undefined) {
-      updateData.interestHobbies = interestHobbies;
-    }
-    if (professionalSkills !== undefined) {
-      updateData.professionalSkills = professionalSkills;
-    }
-    if (internSwitch !== undefined) {
-      updateData.internSwitch = internSwitch;
-    }
-    if (mentorFor !== undefined) {
-      updateData.mentorFor = mentorFor;
-    }
+    // Note: competitiveExams, interestHobbies, professionalSkills, internSwitch, mentorFor
+    // are not in the current schema - they are ignored
+    // If needed, they can be stored in metadata or added to schema
 
     // Handle projects if provided - store in Project table
     // Note: This will be handled after profile update to ensure studentId exists
@@ -286,10 +326,25 @@ export class ProfilesService {
     }
 
     // Use upsert to create profile if it doesn't exist, or update if it does
+    // Only include fields that are actually provided (partial save support)
+    const updateFields: any = {};
+    const createFields: any = { ...createData };
+
+    // For update: only include fields that are explicitly provided (not undefined)
+    Object.keys(updateData).forEach(key => {
+      if (updateData[key] !== undefined) {
+        updateFields[key] = updateData[key];
+      }
+    });
+
+    // Ensure firstName and lastName for create
+    if (!createFields.firstName) createFields.firstName = '';
+    if (!createFields.lastName) createFields.lastName = '';
+
     const updated = await this.prisma.studentProfile.upsert({
       where: { userId },
-      update: updateData,
-      create: createData,
+      update: updateFields, // Only update provided fields
+      create: createFields,
     });
 
     // Note: firstName and lastName are stored in StudentProfile, not User model
