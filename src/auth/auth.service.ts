@@ -280,7 +280,7 @@ export class AuthService {
 
     // Get OTP API configuration
     // Priority: provided apiKey > environment variable > default
-    const otpApiKey = apiKey || this.configService.get<string>('OTP_API_KEY') || 'f225edc7-b376-4b23-9ab2-0aa927637f01';
+    const otpApiKey = apiKey || this.configService.get<string>('OTP_API_KEY') || 'f46f0470-602a-45d8-b9b4-c9ccfb0b2201';
     const otpApiUrl = this.configService.get<string>('OTP_API_URL') || 'https://api.msg91.com/api/v5/otp';
 
     // Log API key source for debugging
