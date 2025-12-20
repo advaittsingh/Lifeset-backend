@@ -10,7 +10,7 @@ BEGIN
     -- Get the current column data type
     SELECT data_type INTO col_data_type
     FROM information_schema.columns 
-    WHERE table_name = 'Post' 
+        WHERE table_name = 'Post' 
     AND column_name = 'jobType';
     
     -- Only proceed if column exists and is TEXT (not already enum)
@@ -30,7 +30,7 @@ BEGIN
     END IF;
 END $$;
 
--- Fix Post.language column to use Language enum  
+-- Fix Post.language column to use Language enum
 DO $$ 
 DECLARE
     col_data_type text;
@@ -38,7 +38,7 @@ BEGIN
     -- Get the current column data type
     SELECT data_type INTO col_data_type
     FROM information_schema.columns 
-    WHERE table_name = 'Post' 
+        WHERE table_name = 'Post' 
     AND column_name = 'language';
     
     -- Only proceed if column exists and is TEXT (not already enum)

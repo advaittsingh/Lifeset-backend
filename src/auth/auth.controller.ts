@@ -1,5 +1,5 @@
-import { Controller, Post, Body, Get, UseGuards, Request } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
+import { Controller, Post, Body, Get, UseGuards, Request, Headers } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiHeader } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { Public } from '../common/decorators/public.decorator';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -30,8 +30,25 @@ export class AuthController {
   @Public()
   @Post('send-otp')
   @ApiOperation({ summary: 'Send OTP' })
-  async sendOtp(@Body() data: SendOtpDto) {
-    return this.authService.generateOtp(data.emailOrMobile);
+  @ApiHeader({ name: 'LYFSET', required: false, description: 'OTP API Key (optional, can also be in body)' })
+  async sendOtp(
+    @Body() data: SendOtpDto,
+    @Headers('LYFSET') apiKeyFromHeader?: string,
+    @Headers('x-api-key') apiKeyAlt?: string,
+    @Headers('api-key') apiKeyAlt2?: string,
+    @Request() req?: any,
+  ) {
+    // Get API key from multiple sources for compatibility
+    // Priority: LYFSET header > x-api-key header > api-key header > body > undefined
+    const apiKey = 
+      apiKeyFromHeader || 
+      apiKeyAlt || 
+      apiKeyAlt2 ||
+      (data as any).apiKey || 
+      req?.body?.apiKey || 
+      undefined;
+    
+    return this.authService.generateOtp(data.emailOrMobile, apiKey);
   }
 
   @Public()

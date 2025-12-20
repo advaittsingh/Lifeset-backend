@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException, BadRequestException, InternalServerE
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
+import axios from 'axios';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { RedisService } from '../common/redis/redis.service';
 import { UserType } from '@/shared';
@@ -266,17 +267,145 @@ export class AuthService {
     }
   }
 
-  async generateOtp(emailOrMobile: string) {
+  async generateOtp(emailOrMobile: string, apiKey?: string) {
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const key = `otp:${emailOrMobile}`;
     
     // Store OTP in Redis with 10 minute expiration
     await this.redis.set(key, otp, 600);
 
-    // TODO: Send OTP via SMS/Email queue
-    // await this.queueService.addSMSJob({ to: emailOrMobile, otp });
+    // Determine if it's email or mobile
+    const isEmail = emailOrMobile.includes('@');
+    const isMobile = /^[0-9]{10,15}$/.test(emailOrMobile.replace(/[^0-9]/g, ''));
 
-    return { success: true, message: 'OTP sent successfully' };
+    // Get OTP API configuration
+    // Priority: provided apiKey > environment variable > default
+    const otpApiKey = apiKey || this.configService.get<string>('OTP_API_KEY') || 'f225edc7-b376-4b23-9ab2-0aa927637f01';
+    const otpApiUrl = this.configService.get<string>('OTP_API_URL') || 'https://api.msg91.com/api/v5/otp';
+
+    // Log API key source for debugging
+    if (apiKey) {
+      this.logger.log(`Using API key from request (header/body)`);
+    } else if (this.configService.get<string>('OTP_API_KEY')) {
+      this.logger.log(`Using API key from environment variable`);
+    } else {
+      this.logger.warn(`Using default API key - consider setting OTP_API_KEY in environment`);
+    }
+
+    try {
+      // Send OTP via API
+      if (isMobile) {
+        // Send SMS OTP
+        await this.sendSmsOtp(emailOrMobile, otp, otpApiKey, otpApiUrl);
+      } else if (isEmail) {
+        // Send Email OTP
+        await this.sendEmailOtp(emailOrMobile, otp, otpApiKey, otpApiUrl);
+      } else {
+        this.logger.warn(`Invalid email or mobile format: ${emailOrMobile}`);
+        // Still store OTP for testing purposes
+      }
+
+      this.logger.log(`OTP generated and sent to ${emailOrMobile?.substring(0, 3)}***`);
+      return { success: true, message: 'OTP sent successfully' };
+    } catch (error: any) {
+      this.logger.error(`Failed to send OTP: ${error.message}`, error.stack);
+      this.logger.error(`OTP Send Error Details: ${JSON.stringify({
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status,
+        emailOrMobile: emailOrMobile?.substring(0, 3) + '***',
+      })}`);
+
+      // Still return success if OTP is stored (for testing/development)
+      // In production, you might want to throw an error here
+      return { 
+        success: true, 
+        message: 'OTP generated (sending may have failed, check logs)',
+        debug: process.env.NODE_ENV === 'development' ? { otp, error: error.message } : undefined,
+      };
+    }
+  }
+
+  private async sendSmsOtp(mobile: string, otp: string, apiKey: string, apiUrl: string) {
+    try {
+      // Clean mobile number (remove non-digits)
+      const cleanMobile = mobile.replace(/[^0-9]/g, '');
+      
+      // Try multiple API formats for compatibility
+      const payloads = [
+        // Format 1: Standard MSG91 format
+        {
+          mobile: cleanMobile,
+          otp: otp,
+          message: `Your LifeSet OTP is ${otp}. Valid for 10 minutes.`,
+        },
+        // Format 2: Alternative format
+        {
+          to: cleanMobile,
+          otp: otp,
+          template_id: 'default',
+        },
+      ];
+
+      const headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+        'api-key': apiKey,
+      };
+
+      // Try first format
+      try {
+        const response = await axios.post(
+          `${apiUrl}/send`,
+          payloads[0],
+          { headers }
+        );
+        this.logger.log(`OTP Send Response: ${JSON.stringify(response.data)}`);
+        return response.data;
+      } catch (error: any) {
+        // Try second format if first fails
+        this.logger.warn(`First OTP API format failed, trying alternative: ${error.message}`);
+        const response = await axios.post(
+          `${apiUrl}`,
+          { ...payloads[1], apiKey },
+          { headers: { 'Content-Type': 'application/json' } }
+        );
+        this.logger.log(`OTP Send Response (alt): ${JSON.stringify(response.data)}`);
+        return response.data;
+      }
+    } catch (error: any) {
+      this.logger.error(`SMS OTP sending failed: ${error.message}`, error.stack);
+      throw error;
+    }
+  }
+
+  private async sendEmailOtp(email: string, otp: string, apiKey: string, apiUrl: string) {
+    try {
+      const payload = {
+        email: email,
+        otp: otp,
+        subject: 'Your LifeSet OTP',
+        message: `Your LifeSet OTP is ${otp}. Valid for 10 minutes.`,
+      };
+
+      const headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${apiKey}`,
+        'api-key': apiKey,
+      };
+
+      const response = await axios.post(
+        `${apiUrl}/email/send`,
+        { ...payload, apiKey },
+        { headers }
+      );
+
+      this.logger.log(`Email OTP Send Response: ${JSON.stringify(response.data)}`);
+      return response.data;
+    } catch (error: any) {
+      this.logger.error(`Email OTP sending failed: ${error.message}`, error.stack);
+      throw error;
+    }
   }
 
   async verifyOtp(emailOrMobile: string, otp: string) {

@@ -232,7 +232,7 @@ BEGIN
         WHERE c.conname = 'check_language' 
         AND t.relname = 'Post'
     ) THEN
-        ALTER TABLE "Post" ADD CONSTRAINT "check_language" CHECK ("language" IS NULL OR "language" IN ('ENGLISH', 'HINDI'));
+ALTER TABLE "Post" ADD CONSTRAINT "check_language" CHECK ("language" IS NULL OR "language" IN ('ENGLISH', 'HINDI'));
     END IF;
 END $$;
 
@@ -245,7 +245,7 @@ BEGIN
         WHERE c.conname = 'check_job_type' 
         AND t.relname = 'Post'
     ) THEN
-        ALTER TABLE "Post" ADD CONSTRAINT "check_job_type" CHECK ("jobType" IS NULL OR "jobType" IN ('FULL_TIME', 'PART_TIME', 'CONTRACT', 'INTERNSHIP', 'FREELANCE'));
+ALTER TABLE "Post" ADD CONSTRAINT "check_job_type" CHECK ("jobType" IS NULL OR "jobType" IN ('FULL_TIME', 'PART_TIME', 'CONTRACT', 'INTERNSHIP', 'FREELANCE'));
     END IF;
 END $$;
 
@@ -258,7 +258,7 @@ BEGIN
         WHERE c.conname = 'check_private_filters_year' 
         AND t.relname = 'Post'
     ) THEN
-        ALTER TABLE "Post" ADD CONSTRAINT "check_private_filters_year" CHECK ("privateFiltersYear" IS NULL OR "privateFiltersYear" IN ('1', '2', '3', '4'));
+ALTER TABLE "Post" ADD CONSTRAINT "check_private_filters_year" CHECK ("privateFiltersYear" IS NULL OR "privateFiltersYear" IN ('1', '2', '3', '4'));
     END IF;
 END $$;
 

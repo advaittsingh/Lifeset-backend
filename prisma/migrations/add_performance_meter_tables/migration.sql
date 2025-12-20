@@ -80,3 +80,4 @@ ALTER TABLE "DailyEngagementStatus" ADD CONSTRAINT "DailyEngagementStatus_userId
 -- AddForeignKey
 ALTER TABLE "UserBadgeStatus" ADD CONSTRAINT "UserBadgeStatus_userId_fkey" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;
 
+
