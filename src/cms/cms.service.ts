@@ -38,8 +38,8 @@ export class CmsService {
       ];
     }
 
-    const page = filters?.page || 1;
-    const limit = filters?.limit || 20;
+    const page = parseInt(String(filters?.page || 1), 10);
+    const limit = parseInt(String(filters?.limit || 20), 10);
     const skip = (page - 1) * limit;
 
     const [posts, total] = await Promise.all([
@@ -100,8 +100,8 @@ export class CmsService {
       ];
     }
 
-    const page = filters?.page || 1;
-    const limit = filters?.limit || 20;
+    const page = parseInt(String(filters?.page || 1), 10);
+    const limit = parseInt(String(filters?.limit || 20), 10);
     const skip = (page - 1) * limit;
 
     const [posts, total] = await Promise.all([

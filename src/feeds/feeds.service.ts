@@ -211,8 +211,8 @@ export class FeedsService {
     salaryMin?: number;
     salaryMax?: number;
   }, userId?: string) {
-    const page = filters.page || 1;
-    const limit = filters.limit || 20;
+    const page = parseInt(String(filters.page || 1), 10);
+    const limit = parseInt(String(filters.limit || 20), 10);
     const skip = (page - 1) * limit;
 
     const where: any = {

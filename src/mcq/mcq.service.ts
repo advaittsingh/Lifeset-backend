@@ -33,10 +33,10 @@ export class McqService {
     // Check if pagination was explicitly requested
     const hasExplicitPagination = filters.page !== undefined || filters.limit !== undefined;
     
-    const page = filters.page || 1;
+    const page = parseInt(String(filters.page || 1), 10);
     // If no categoryId is provided and no limit specified, allow fetching more questions (for "get all" scenario)
     // Otherwise use default limit of 20
-    const limit = filters.limit || (filters.categoryId ? 20 : 1000);
+    const limit = parseInt(String(filters.limit || (filters.categoryId ? 20 : 1000)), 10);
     const skip = (page - 1) * limit;
 
     const where: any = {};

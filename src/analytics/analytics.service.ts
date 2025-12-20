@@ -64,7 +64,7 @@ export class AnalyticsService {
     return this.prisma.userEvent.findMany({
       where,
       orderBy: { createdAt: 'desc' },
-      take: filters?.limit || 100,
+      take: parseInt(String(filters?.limit || 100), 10),
     });
   }
 }

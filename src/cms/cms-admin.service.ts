@@ -29,8 +29,8 @@ export class CmsAdminService {
       where,
       include: { user: true, category: true },
       orderBy: { createdAt: 'desc' },
-      skip: filters?.page ? (filters.page - 1) * (filters.limit || 20) : 0,
-      take: filters?.limit || 20,
+      skip: filters?.page ? (parseInt(String(filters.page), 10) - 1) * parseInt(String(filters.limit || 20), 10) : 0,
+      take: parseInt(String(filters?.limit || 20), 10),
     });
   }
 
@@ -211,8 +211,8 @@ export class CmsAdminService {
       where,
       include: { user: true, category: true },
       orderBy: { createdAt: 'desc' },
-      skip: filters?.page ? (filters.page - 1) * (filters.limit || 20) : 0,
-      take: filters?.limit || 20,
+      skip: filters?.page ? (parseInt(String(filters.page), 10) - 1) * parseInt(String(filters.limit || 20), 10) : 0,
+      take: parseInt(String(filters?.limit || 20), 10),
     });
   }
 
@@ -387,8 +387,8 @@ export class CmsAdminService {
       where,
       include: { category: true },
       orderBy: { createdAt: 'desc' },
-      skip: filters?.page ? (filters.page - 1) * (filters.limit || 20) : 0,
-      take: filters?.limit || 20,
+      skip: filters?.page ? (parseInt(String(filters.page), 10) - 1) * parseInt(String(filters.limit || 20), 10) : 0,
+      take: parseInt(String(filters?.limit || 20), 10),
     });
   }
 
@@ -690,8 +690,8 @@ export class CmsAdminService {
       where,
       include: { user: true, category: true },
       orderBy: { createdAt: 'desc' },
-      skip: filters?.page ? (filters.page - 1) * (filters.limit || 20) : 0,
-      take: filters?.limit || 20,
+      skip: filters?.page ? (parseInt(String(filters.page), 10) - 1) * parseInt(String(filters.limit || 20), 10) : 0,
+      take: parseInt(String(filters?.limit || 20), 10),
     });
   }
 

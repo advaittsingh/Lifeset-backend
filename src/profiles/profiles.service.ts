@@ -28,27 +28,7 @@ export class ProfilesService {
       }
 
       // Return user with studentProfile (preferredLanguage and userStatus are now in schema)
-      // Format the response to include all saved data
-      const formattedUser = {
-        ...user,
-        studentProfile: user.studentProfile ? {
-          ...user.studentProfile,
-          // Extract metadata from education12th if it exists
-          metadata: user.studentProfile.education12th && typeof user.studentProfile.education12th === 'object' && !Array.isArray(user.studentProfile.education12th)
-            ? user.studentProfile.education12th
-            : null,
-          // Education array is in education10th
-          education: Array.isArray(user.studentProfile.education10th) 
-            ? user.studentProfile.education10th 
-            : null,
-          // Map profileImage to profilePicture for frontend compatibility
-          profilePicture: user.studentProfile.profileImage,
-          // Map preferredLanguage to languageKnown for frontend compatibility
-          languageKnown: user.studentProfile.preferredLanguage,
-        } : null,
-      };
-      
-      return formattedUser;
+      return user;
     } catch (error: any) {
       // Re-throw known exceptions
       if (error instanceof NotFoundException) {
@@ -233,17 +213,28 @@ export class ProfilesService {
       'firstName', 'lastName', 'dateOfBirth', 'gender', 'address', 'city', 'state', 'pincode',
       'profileImage', 'voiceRecording', 'profileScore', 'collegeId', 'collegeProfileId', 'courseId',
       'preferredLanguage', 'userStatus',
-      'education10th', 'education12th', 'graduation', 'postGraduation',
-      'technicalSkills', 'softSkills'
+      // Personal Details - Family Info
+      'category', 'religion', 'fatherName', 'fatherHighestDegree', 'fatherOccupation',
+      'motherName', 'motherHighestDegree', 'motherOccupation',
+      // Addresses
+      'nativeAddress', 'currentAddress',
+      // Education
+      'education', 'education10th', 'education12th', 'graduation', 'postGraduation',
+      // Skills
+      'technicalSkills', 'softSkills', 'interestHobbies', 'professionalSkills',
+      'internSwitch', 'mentorFor',
+      // Competitive Exams
+      'competitiveExams',
+      // Media
+      'introVideo', 'resume'
     ];
 
     // Extract nested fields and arrays (not direct StudentProfile fields)
-    // These will be stored in JSON fields or metadata
     const {
       nativeAddress,
       currentAddress,
-      education, // Array of education entries
-      competitiveExams, // Array of competitive exam entries
+      education,
+      competitiveExams,
       projects,
       experience,
       experiences, // Also check for 'experiences' plural
@@ -255,19 +246,16 @@ export class ProfilesService {
       mentorFor,
       profilePicture, // Map to profileImage
       languageKnown, // Map to preferredLanguage
-      category, // Store in metadata
-      religion, // Store in metadata
-      fatherName, // Store in metadata
-      fatherHighestDegree, // Store in metadata
-      fatherOccupation, // Store in metadata
-      motherName, // Store in metadata
-      motherHighestDegree, // Store in metadata
-      motherOccupation, // Store in metadata
+      category, // Not in schema - ignore
+      religion, // Not in schema - ignore
+      fatherName, // Not in schema - ignore
+      fatherHighestDegree, // Not in schema - ignore
+      fatherOccupation, // Not in schema - ignore
+      motherName, // Not in schema - ignore
+      motherHighestDegree, // Not in schema - ignore
+      motherOccupation, // Not in schema - ignore
       ...profileData
     } = data;
-
-    // Create metadata object to store additional fields not in schema
-    const metadata: any = {};
 
     // Build updateData object - process ALL fields from data, not just profileData
     const updateData: any = {};
@@ -285,11 +273,7 @@ export class ProfilesService {
     // Process all fields from the original data object
     for (const [key, value] of Object.entries(data)) {
       // Skip nested objects and arrays that are handled separately
-      if (['nativeAddress', 'currentAddress', 'education', 'competitiveExams', 'projects', 
-           'experience', 'experiences', 'introVideo', 'resume', 'interestHobbies', 
-           'professionalSkills', 'internSwitch', 'mentorFor', 'profilePicture', 
-           'languageKnown', 'category', 'religion', 'fatherName', 'fatherHighestDegree',
-           'fatherOccupation', 'motherName', 'motherHighestDegree', 'motherOccupation'].includes(key)) {
+      if (['projects', 'experience', 'experiences', 'profilePicture', 'languageKnown'].includes(key)) {
         continue;
       }
 
@@ -331,12 +315,11 @@ export class ProfilesService {
       }
     }
 
-    // Handle education fields - support both array format and object format
-    // Education array format: [{ level, currentlyStudying, schoolInstituteCollege, ... }, ...]
+    // Handle education - store as JSON array
     if (education !== undefined) {
       if (Array.isArray(education)) {
         // Store education array directly
-        updateData.education10th = education;
+        updateData.education = education;
       } else if (typeof education === 'object' && education !== null) {
         // Support legacy format with separate fields
         if (education.education10th !== undefined) updateData.education10th = education.education10th;
@@ -347,69 +330,53 @@ export class ProfilesService {
     }
     
     // Also check for direct education fields (legacy support)
+    if (data.education !== undefined && Array.isArray(data.education)) {
+      updateData.education = data.education;
+    }
     if (data.education10th !== undefined) updateData.education10th = data.education10th;
     if (data.education12th !== undefined) updateData.education12th = data.education12th;
     if (data.graduation !== undefined) updateData.graduation = data.graduation;
     if (data.postGraduation !== undefined) updateData.postGraduation = data.postGraduation;
 
-    // Handle technicalSkills and softSkills (arrays)
+    // Handle addresses (store as JSON)
+    if (nativeAddress !== undefined) {
+      updateData.nativeAddress = nativeAddress;
+    }
+    if (currentAddress !== undefined) {
+      updateData.currentAddress = currentAddress;
+    }
+
+    // Handle competitive exams (store as JSON array)
+    if (competitiveExams !== undefined) {
+      updateData.competitiveExams = Array.isArray(competitiveExams) ? competitiveExams : [];
+    }
+
+    // Handle skills arrays
     if (data.technicalSkills !== undefined) {
       updateData.technicalSkills = Array.isArray(data.technicalSkills) ? data.technicalSkills : [];
     }
     if (data.softSkills !== undefined) {
       updateData.softSkills = Array.isArray(data.softSkills) ? data.softSkills : [];
     }
-
-    // Store additional fields in metadata (using education10th JSON field as metadata storage)
-    // Personal Details - Family Info
-    if (data.category !== undefined) metadata.category = data.category;
-    if (data.religion !== undefined) metadata.religion = data.religion;
-    if (data.fatherName !== undefined) metadata.fatherName = data.fatherName;
-    if (data.fatherHighestDegree !== undefined) metadata.fatherHighestDegree = data.fatherHighestDegree;
-    if (data.fatherOccupation !== undefined) metadata.fatherOccupation = data.fatherOccupation;
-    if (data.motherName !== undefined) metadata.motherName = data.motherName;
-    if (data.motherHighestDegree !== undefined) metadata.motherHighestDegree = data.motherHighestDegree;
-    if (data.motherOccupation !== undefined) metadata.motherOccupation = data.motherOccupation;
-
-    // Addresses - Store in metadata
-    if (nativeAddress !== undefined) metadata.nativeAddress = nativeAddress;
-    if (currentAddress !== undefined) metadata.currentAddress = currentAddress;
-
-    // Education Array - Store in education10th JSON field (or create new JSON field)
-    // For now, store in education10th as an array
-    if (education !== undefined && Array.isArray(education)) {
-      // Store education array in education10th field (we'll use this as general education storage)
-      updateData.education10th = education;
+    if (interestHobbies !== undefined) {
+      updateData.interestHobbies = Array.isArray(interestHobbies) ? interestHobbies : [];
+    }
+    if (professionalSkills !== undefined) {
+      updateData.professionalSkills = Array.isArray(professionalSkills) ? professionalSkills : [];
     }
 
-    // Competitive Exams - Store in metadata
-    if (competitiveExams !== undefined && Array.isArray(competitiveExams)) {
-      metadata.competitiveExams = competitiveExams;
+    // Handle text fields
+    if (internSwitch !== undefined) {
+      updateData.internSwitch = internSwitch || null;
     }
-
-    // Skills - Store arrays in metadata
-    if (interestHobbies !== undefined && Array.isArray(interestHobbies)) {
-      metadata.interestHobbies = interestHobbies;
+    if (mentorFor !== undefined) {
+      updateData.mentorFor = mentorFor || null;
     }
-    if (professionalSkills !== undefined && Array.isArray(professionalSkills)) {
-      metadata.professionalSkills = professionalSkills;
+    if (introVideo !== undefined) {
+      updateData.introVideo = introVideo || null;
     }
-    if (internSwitch !== undefined) metadata.internSwitch = internSwitch;
-    if (mentorFor !== undefined) metadata.mentorFor = mentorFor;
-
-    // Intro Video and Resume - Store in metadata
-    if (introVideo !== undefined) metadata.introVideo = introVideo;
-    if (resume !== undefined) metadata.resume = resume;
-
-    // Store all metadata in education12th JSON field
-    // education10th is used for education array, education12th for metadata
-    if (Object.keys(metadata).length > 0) {
-      // If education12th already exists, merge metadata
-      if (updateData.education12th && typeof updateData.education12th === 'object' && !Array.isArray(updateData.education12th)) {
-        updateData.education12th = { ...updateData.education12th, ...metadata };
-      } else {
-        updateData.education12th = metadata;
-      }
+    if (resume !== undefined) {
+      updateData.resume = resume || null;
     }
 
     // Handle projects if provided - store in Project table
@@ -457,10 +424,11 @@ export class ProfilesService {
     console.log('✅ Profile saved successfully:', {
       profileId: updated.id,
       fieldsUpdated: Object.keys(updateFields).length,
-      hasEducation: !!updateData.education10th,
-      hasMetadata: !!updateData.education12th,
-      projectsCount: projectsToCreate?.length || 0,
-      experiencesCount: experiencesToCreate?.length || 0,
+    });
+
+    console.log('✅ Profile saved successfully:', {
+      profileId: updated.id,
+      fieldsUpdated: Object.keys(updateFields).length,
     });
 
     // Note: firstName and lastName are stored in StudentProfile, not User model
@@ -476,32 +444,23 @@ export class ProfilesService {
       // Create new projects
       if (Array.isArray(projectsToCreate) && projectsToCreate.length > 0) {
         await this.prisma.project.createMany({
-          data: projectsToCreate.map((project: any) => {
-            // Parse startMonthYear and endMonthYear to dates if provided
-            let startDate = new Date();
-            let endDate: Date | null = null;
-            
-            if (project.startMonthYear) {
-              const [month, year] = project.startMonthYear.split('/');
-              startDate = new Date(parseInt(year), parseInt(month) - 1, 1);
-            }
-            
-            if (project.endMonthYear) {
-              const [month, year] = project.endMonthYear.split('/');
-              endDate = new Date(parseInt(year), parseInt(month) - 1, 1);
-            }
-
-            return {
-              studentId: updated.id,
-              title: project.projectName || project.title || 'Untitled Project',
-              description: project.aboutProject || project.description || '',
-              images: project.images || [],
-              links: project.links || [],
-              technologies: project.technologies || [],
-              // Store additional fields in a JSON field if needed (using images array for now)
-              // For now, store location, department, designation in description or as JSON
-            };
-          }),
+          data: projectsToCreate.map((project: any) => ({
+            studentId: updated.id,
+            // New fields
+            projectName: project.projectName || project.title || 'Untitled Project',
+            location: project.location || null,
+            department: project.department || null,
+            designation: project.designation || null,
+            startMonthYear: project.startMonthYear || null,
+            endMonthYear: project.endMonthYear || null,
+            aboutProject: project.aboutProject || project.description || '',
+            // Legacy fields (required)
+            title: project.projectName || project.title || 'Untitled Project',
+            description: project.aboutProject || project.description || '',
+            images: project.images || [],
+            links: project.links || [],
+            technologies: project.technologies || [],
+          })),
         });
       }
     }
@@ -535,19 +494,22 @@ export class ProfilesService {
               endDate = new Date(exp.endDate);
             }
 
-            // Build description with all fields
-            const descriptionParts = [];
-            if (exp.aboutRole) descriptionParts.push(exp.aboutRole);
-            if (exp.location) descriptionParts.push(`Location: ${exp.location}`);
-            if (exp.department) descriptionParts.push(`Department: ${exp.department}`);
-            if (exp.isFacultyMember) descriptionParts.push('Faculty Member');
-            const fullDescription = descriptionParts.join('\n') || exp.description || null;
-
             return {
               studentId: updated.id,
+              // New fields
+              companyName: exp.companyName || exp.company || null,
+              isFacultyMember: exp.isFacultyMember || false,
+              location: exp.location || null,
+              department: exp.department || null,
+              designation: exp.designation || exp.title || 'Untitled',
+              startMonthYear: exp.startMonthYear || null,
+              endMonthYear: exp.endMonthYear || null,
+              aboutRole: exp.aboutRole || exp.description || null,
+              currentlyWorking: exp.currentlyWorking || exp.isCurrent || false,
+              // Legacy fields (required)
               title: exp.designation || exp.title || 'Untitled',
               company: exp.companyName || exp.company || null,
-              description: fullDescription,
+              description: exp.aboutRole || exp.description || null,
               startDate,
               endDate,
               isCurrent: exp.currentlyWorking || exp.isCurrent || false,
