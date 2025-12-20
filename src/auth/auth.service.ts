@@ -329,52 +329,71 @@ export class AuthService {
   private async sendSmsOtp(mobile: string, otp: string, apiKey: string, apiUrl: string) {
     try {
       // Clean mobile number (remove non-digits)
-      const cleanMobile = mobile.replace(/[^0-9]/g, '');
+      let cleanMobile = mobile.replace(/[^0-9]/g, '');
       
-      // Try multiple API formats for compatibility
-      const payloads = [
-        // Format 1: Standard MSG91 format
-        {
-          mobile: cleanMobile,
-          otp: otp,
-          message: `Your LifeSet OTP is ${otp}. Valid for 10 minutes.`,
-        },
-        // Format 2: Alternative format
-        {
-          to: cleanMobile,
-          otp: otp,
-          template_id: 'default',
-        },
-      ];
-
-      const headers = {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-        'api-key': apiKey,
+      // Ensure mobile number has country code (default to +91 for India if not present)
+      if (cleanMobile.length === 10) {
+        cleanMobile = '91' + cleanMobile; // Add India country code
+      } else if (cleanMobile.startsWith('91') && cleanMobile.length === 12) {
+        // Already has country code
+      } else if (cleanMobile.startsWith('0')) {
+        cleanMobile = '91' + cleanMobile.substring(1); // Remove leading 0 and add country code
+      }
+      
+      this.logger.log(`Sending SMS OTP to mobile: ${cleanMobile.substring(0, 2)}***${cleanMobile.slice(-4)}`);
+      
+      // MSG91 API v5 format - authkey should be in query parameter or body
+      const payload = {
+        mobile: cleanMobile,
+        otp: otp,
+        template_id: this.configService.get<string>('OTP_SMS_TEMPLATE_ID') || undefined,
+        authkey: apiKey,
       };
 
-      // Try first format
+      // MSG91 API endpoint format
+      const msg91Url = apiUrl.includes('msg91') 
+        ? apiUrl 
+        : `https://api.msg91.com/api/v5/otp`;
+
+      // Try with authkey in query parameter (MSG91 standard format)
       try {
         const response = await axios.post(
-          `${apiUrl}/send`,
-          payloads[0],
-          { headers }
+          `${msg91Url}?authkey=${encodeURIComponent(apiKey)}`,
+          {
+            mobile: cleanMobile,
+            otp: otp,
+            template_id: this.configService.get<string>('OTP_SMS_TEMPLATE_ID') || undefined,
+          },
+          {
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          }
         );
-        this.logger.log(`OTP Send Response: ${JSON.stringify(response.data)}`);
+        this.logger.log(`SMS OTP Send Response (query param): ${JSON.stringify(response.data)}`);
         return response.data;
       } catch (error: any) {
-        // Try second format if first fails
-        this.logger.warn(`First OTP API format failed, trying alternative: ${error.message}`);
+        // Try with authkey in body
+        this.logger.warn(`SMS OTP with query param failed, trying body format: ${error.message}`);
         const response = await axios.post(
-          `${apiUrl}`,
-          { ...payloads[1], apiKey },
-          { headers: { 'Content-Type': 'application/json' } }
+          msg91Url,
+          payload,
+          {
+            headers: {
+              'Content-Type': 'application/json',
+            },
+          }
         );
-        this.logger.log(`OTP Send Response (alt): ${JSON.stringify(response.data)}`);
+        this.logger.log(`SMS OTP Send Response (body): ${JSON.stringify(response.data)}`);
         return response.data;
       }
     } catch (error: any) {
-      this.logger.error(`SMS OTP sending failed: ${error.message}`, error.stack);
+      this.logger.error(`SMS OTP sending failed: ${error.message}`, {
+        stack: error.stack,
+        response: error.response?.data,
+        status: error.response?.status,
+        mobile: mobile.substring(0, 3) + '***',
+      });
       throw error;
     }
   }
