@@ -1,10 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger, InternalServerErrorException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 
 @Injectable()
 export class PersonalityService {
+  private readonly logger = new Logger(PersonalityService.name);
   private openaiApiKey: string;
   private openaiBaseUrl: string;
 
@@ -17,35 +18,47 @@ export class PersonalityService {
   }
 
   async getQuizQuestions() {
-    // Get personality quiz questions from database or return default set
-    const questions = await this.prisma.personalityQuiz.findMany({
-      where: { isActive: true },
-      orderBy: { order: 'asc' },
-      take: 20,
-      select: {
-        id: true,
-        question: true,
-        options: true,
-        imageUrl: true,
-        order: true,
-        isActive: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
+    try {
+      this.logger.log('📝 Getting personality quiz questions');
+      
+      // Get personality quiz questions from database or return default set
+      const questions = await this.prisma.personalityQuiz.findMany({
+        where: { isActive: true },
+        orderBy: { order: 'asc' },
+        take: 20,
+        select: {
+          id: true,
+          question: true,
+          options: true,
+          imageUrl: true,
+          order: true,
+          isActive: true,
+          createdAt: true,
+          updatedAt: true,
+        },
+      });
 
-    if (questions.length === 0) {
-      // Return default questions if none in database
+      this.logger.log(`✅ Found ${questions.length} personality quiz questions`);
+
+      if (questions.length === 0) {
+        this.logger.warn('⚠️ No questions in database, returning default questions');
+        // Return default questions if none in database
+        return this.getDefaultQuestions();
+      }
+
+      // Ensure imageUrl is included in response (even if null)
+      const questionsWithImages = questions.map(q => ({
+        ...q,
+        imageUrl: q.imageUrl || null, // Explicitly include imageUrl
+      }));
+
+      return { questions: questionsWithImages };
+    } catch (error: any) {
+      this.logger.error(`❌ Error fetching personality quiz questions: ${error.message}`, error.stack);
+      // Return default questions as fallback instead of throwing error
+      this.logger.warn('⚠️ Returning default questions as fallback');
       return this.getDefaultQuestions();
     }
-
-    // Ensure imageUrl is included in response (even if null)
-    const questionsWithImages = questions.map(q => ({
-      ...q,
-      imageUrl: q.imageUrl || null, // Explicitly include imageUrl
-    }));
-
-    return { questions: questionsWithImages };
   }
 
   async evaluateAnswers(userId: string, answers: Record<string, number>) {
@@ -179,30 +192,35 @@ Respond in JSON format:
           id: '1',
           question: 'I prefer working in a team rather than alone',
           options: ['Strongly Disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly Agree'],
+          imageUrl: null,
           order: 1,
         },
         {
           id: '2',
           question: 'I enjoy solving complex problems',
           options: ['Strongly Disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly Agree'],
+          imageUrl: null,
           order: 2,
         },
         {
           id: '3',
           question: 'I am comfortable taking risks',
           options: ['Strongly Disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly Agree'],
+          imageUrl: null,
           order: 3,
         },
         {
           id: '4',
           question: 'I prefer structured and organized environments',
           options: ['Strongly Disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly Agree'],
+          imageUrl: null,
           order: 4,
         },
         {
           id: '5',
           question: 'I enjoy creative and innovative tasks',
           options: ['Strongly Disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly Agree'],
+          imageUrl: null,
           order: 5,
         },
       ],
