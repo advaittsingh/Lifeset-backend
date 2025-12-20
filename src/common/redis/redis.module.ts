@@ -11,29 +11,80 @@ import Redis from 'ioredis';
       provide: 'REDIS_CLIENT',
       useFactory: (configService: ConfigService) => {
         const logger = new Logger('RedisModule');
-        const host = configService.get('REDIS_HOST', 'localhost');
-        const port = configService.get('REDIS_PORT', 6379);
-        const password = configService.get('REDIS_PASSWORD');
+        
+        // Support Redis URL format (Upstash, Railway, etc.)
+        // Format: rediss://default:password@host:port or redis://default:password@host:port
+        const redisUrl = configService.get('REDIS_URL') || configService.get('KV_URL');
+        
+        let redisConfig: any;
+        
+        if (redisUrl) {
+          // Parse Redis URL
+          // rediss://default:password@host:port or redis://default:password@host:port
+          const urlMatch = redisUrl.match(/^(rediss?):\/\/(?:[^:]+:)?([^@]+)@([^:]+):(\d+)$/);
+          
+          if (urlMatch) {
+            const [, protocol, password, host, port] = urlMatch;
+            redisConfig = {
+              host,
+              port: Number(port),
+              password: password || undefined,
+              tls: protocol === 'rediss', // Use TLS for rediss://
+              retryStrategy: (times: number) => {
+                const delay = Math.min(times * 50, 2000);
+                return delay;
+              },
+              maxRetriesPerRequest: 3,
+              enableReadyCheck: true,
+              lazyConnect: true,
+            };
+            logger.log(`Using Redis URL connection: ${host}:${port} (TLS: ${protocol === 'rediss'})`);
+          } else {
+            logger.warn(`Invalid Redis URL format: ${redisUrl}. Falling back to host/port configuration.`);
+            // Fall back to host/port configuration
+            const host = configService.get('REDIS_HOST', 'localhost');
+            const port = configService.get('REDIS_PORT', 6379);
+            const password = configService.get('REDIS_PASSWORD');
+            redisConfig = {
+              host,
+              port: Number(port),
+              password: password || undefined,
+              retryStrategy: (times: number) => {
+                const delay = Math.min(times * 50, 2000);
+                return delay;
+              },
+              maxRetriesPerRequest: 3,
+              enableReadyCheck: true,
+              lazyConnect: true,
+            };
+          }
+        } else {
+          // Use traditional host/port configuration
+          const host = configService.get('REDIS_HOST', 'localhost');
+          const port = configService.get('REDIS_PORT', 6379);
+          const password = configService.get('REDIS_PASSWORD');
+          redisConfig = {
+            host,
+            port: Number(port),
+            password: password || undefined,
+            retryStrategy: (times: number) => {
+              const delay = Math.min(times * 50, 2000);
+              return delay;
+            },
+            maxRetriesPerRequest: 3,
+            enableReadyCheck: true,
+            lazyConnect: true,
+          };
+        }
 
-        const redisClient = new Redis({
-          host,
-          port: Number(port),
-          password: password || undefined,
-          retryStrategy: (times) => {
-            const delay = Math.min(times * 50, 2000);
-            return delay;
-          },
-          maxRetriesPerRequest: 3,
-          enableReadyCheck: true,
-          lazyConnect: true, // Lazy connect to prevent blocking app initialization
-        });
+        const redisClient = new Redis(redisConfig);
 
         redisClient.on('connect', () => {
-          logger.log(`Connecting to Redis at ${host}:${port}`);
+          logger.log(`Connecting to Redis at ${redisConfig.host}:${redisConfig.port}`);
         });
 
         redisClient.on('ready', () => {
-          logger.log(`Redis connection established successfully at ${host}:${port}`);
+          logger.log(`Redis connection established successfully at ${redisConfig.host}:${redisConfig.port}`);
         });
 
         redisClient.on('error', (error) => {
