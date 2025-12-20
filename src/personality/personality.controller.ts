@@ -28,5 +28,11 @@ export class PersonalityController {
   async getResult(@CurrentUser() user: any) {
     return this.personalityService.getPersonalityResult(user.id);
   }
+
+  @Get('daily-digest-questions')
+  @ApiOperation({ summary: 'Get 2 unanswered personality questions for daily digest' })
+  async getDailyDigestQuestions(@CurrentUser() user: any) {
+    return this.personalityService.getDailyDigestQuestions(user.id);
+  }
 }
 

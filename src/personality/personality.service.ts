@@ -199,4 +199,48 @@ Respond in JSON format:
       orderBy: { createdAt: 'desc' },
     });
   }
+
+  async getDailyDigestQuestions(userId: string) {
+    // Get 2 unanswered personality questions for daily digest
+    // First, get questions user has already answered
+    const answeredResults = await this.prisma.personalityResult.findMany({
+      where: { userId },
+      select: { rawData: true },
+    });
+
+    // Extract answered question IDs from rawData if stored
+    const answeredQuestionIds = new Set<string>();
+    answeredResults.forEach(result => {
+      if (result.rawData && typeof result.rawData === 'object') {
+        const rawData = result.rawData as any;
+        if (rawData.answeredQuestions && Array.isArray(rawData.answeredQuestions)) {
+          rawData.answeredQuestions.forEach((id: string) => answeredQuestionIds.add(id));
+        }
+      }
+    });
+
+    // Get 2 unanswered questions
+    const questions = await this.prisma.personalityQuiz.findMany({
+      where: {
+        isActive: true,
+        ...(answeredQuestionIds.size > 0 && {
+          id: { notIn: Array.from(answeredQuestionIds) },
+        }),
+      },
+      orderBy: { order: 'asc' },
+      take: 2,
+    });
+
+    // If we don't have enough unanswered questions, return any 2 active questions
+    if (questions.length < 2) {
+      const allQuestions = await this.prisma.personalityQuiz.findMany({
+        where: { isActive: true },
+        orderBy: { order: 'asc' },
+        take: 2,
+      });
+      return { questions: allQuestions };
+    }
+
+    return { questions };
+  }
 }

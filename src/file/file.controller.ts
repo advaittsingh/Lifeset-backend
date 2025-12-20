@@ -15,9 +15,27 @@ export class FileController {
   @Post('upload')
   @UseInterceptors(FileInterceptor('file'))
   @ApiConsumes('multipart/form-data')
-  @ApiOperation({ summary: 'Upload file' })
+  @ApiOperation({ summary: 'Upload file (images, PDFs, etc.)' })
   async uploadFile(@UploadedFile() file: Express.Multer.File) {
-    const key = `uploads/${Date.now()}-${file.originalname}`;
+    if (!file) {
+      throw new Error('No file provided');
+    }
+
+    // Validate file type
+    const allowedMimeTypes = [
+      'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+      'application/pdf',
+      'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ];
+    
+    if (!allowedMimeTypes.includes(file.mimetype)) {
+      throw new Error(`File type ${file.mimetype} not allowed. Allowed types: images (JPEG, PNG, GIF, WebP) and PDFs`);
+    }
+
+    // Determine folder based on file type
+    const folder = file.mimetype === 'application/pdf' ? 'certificates' : 'uploads';
+    const key = `${folder}/${Date.now()}-${file.originalname}`;
+    
     const result = await this.fileService.uploadFile(
       file.buffer,
       key,
@@ -25,8 +43,47 @@ export class FileController {
     );
 
     return {
-      url: result.Location,
-      key: result.Key,
+      success: true,
+      data: {
+        url: result.Location,
+        key: result.Key,
+        fileName: file.originalname,
+        fileSize: file.size,
+        mimeType: file.mimetype,
+      },
+    };
+  }
+
+  @Post('upload/certificate')
+  @UseInterceptors(FileInterceptor('file'))
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Upload certificate or degree PDF' })
+  async uploadCertificate(@UploadedFile() file: Express.Multer.File) {
+    if (!file) {
+      throw new Error('No file provided');
+    }
+
+    // Only allow PDFs for certificates
+    if (file.mimetype !== 'application/pdf') {
+      throw new Error('Only PDF files are allowed for certificates');
+    }
+
+    const key = `certificates/${Date.now()}-${file.originalname}`;
+    const result = await this.fileService.uploadFile(
+      file.buffer,
+      key,
+      file.mimetype,
+    );
+
+    return {
+      success: true,
+      data: {
+        url: result.Location,
+        key: result.Key,
+        fileName: file.originalname,
+        fileSize: file.size,
+        type: 'certificate',
+      },
     };
   }
 

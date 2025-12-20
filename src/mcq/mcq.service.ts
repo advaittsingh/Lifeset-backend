@@ -195,5 +195,31 @@ export class McqService {
       orderBy: { createdAt: 'desc' },
     });
   }
+
+  async getDailyDigestLinkedMcqs(articleId?: string, categoryId?: string) {
+    // Get MCQs linked to a specific article or category for daily digest
+    const where: any = {};
+    
+    if (articleId) {
+      where.articleId = articleId;
+    }
+    
+    if (categoryId) {
+      where.categoryId = categoryId;
+    }
+
+    // If no filters, return random MCQs
+    const questions = await this.prisma.mcqQuestion.findMany({
+      where,
+      include: {
+        category: true,
+      },
+      take: 10, // Get more for randomization
+    });
+
+    // Shuffle and return 5 random questions
+    const shuffled = questions.sort(() => 0.5 - Math.random());
+    return shuffled.slice(0, 5);
+  }
 }
 

@@ -148,5 +148,56 @@ export class CmsService {
       isPublished: metadata.isPublished !== undefined ? metadata.isPublished : post.isActive,
     };
   }
+
+  async getCurrentAffairsDailyDigest() {
+    // Get last 24 hours current affairs
+    const yesterday = new Date();
+    yesterday.setHours(yesterday.getHours() - 24);
+
+    const posts = await this.prisma.post.findMany({
+      where: {
+        postType: 'CURRENT_AFFAIRS',
+        isActive: true,
+        createdAt: {
+          gte: yesterday,
+        },
+      },
+      include: { user: true, category: true },
+      orderBy: { createdAt: 'desc' },
+      take: 50, // Get more to allow filtering
+    });
+
+    // Filter by metadata.isPublished if available
+    const publishedPosts = posts.filter(post => {
+      const metadata = post.metadata as any || {};
+      return metadata.isPublished !== false; // Include if not explicitly false
+    });
+
+    return {
+      data: publishedPosts.slice(0, 20), // Return top 20
+      count: publishedPosts.length,
+    };
+  }
+
+  async getGeneralKnowledgeDailyDigest() {
+    // Get 20 random general knowledge articles
+    const posts = await this.prisma.post.findMany({
+      where: {
+        postType: 'COLLEGE_FEED',
+        isActive: true,
+      },
+      include: { user: true, category: true },
+      take: 100, // Get more for randomization
+    });
+
+    // Shuffle and take 20 random
+    const shuffled = posts.sort(() => 0.5 - Math.random());
+    const randomPosts = shuffled.slice(0, 20);
+
+    return {
+      data: randomPosts,
+      count: randomPosts.length,
+    };
+  }
 }
 

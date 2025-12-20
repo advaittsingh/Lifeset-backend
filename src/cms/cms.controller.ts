@@ -54,5 +54,17 @@ export class CmsController {
   async getGeneralKnowledgeById(@Param('id') id: string) {
     return this.cmsService.getGeneralKnowledgeById(id);
   }
+
+  @Get('current-affairs/daily-digest')
+  @ApiOperation({ summary: 'Get last 24 hours current affairs for daily digest' })
+  async getCurrentAffairsDailyDigest() {
+    return this.cmsService.getCurrentAffairsDailyDigest();
+  }
+
+  @Get('general-knowledge/daily-digest')
+  @ApiOperation({ summary: 'Get 20 random general knowledge articles for daily digest' })
+  async getGeneralKnowledgeDailyDigest() {
+    return this.cmsService.getGeneralKnowledgeDailyDigest();
+  }
 }
 

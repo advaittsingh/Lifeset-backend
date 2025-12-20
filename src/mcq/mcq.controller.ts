@@ -56,5 +56,15 @@ export class McqController {
   async getUserAttempts(@CurrentUser() user: any, @Query('questionId') questionId?: string) {
     return this.mcqService.getUserAttempts(user.id, questionId);
   }
+
+  @Get('daily-digest-linked')
+  @ApiOperation({ summary: 'Get linked MCQs based on current affairs or general knowledge articles' })
+  async getDailyDigestLinkedMcqs(
+    @CurrentUser() user: any,
+    @Query('articleId') articleId?: string,
+    @Query('categoryId') categoryId?: string,
+  ) {
+    return this.mcqService.getDailyDigestLinkedMcqs(articleId, categoryId);
+  }
 }
 
