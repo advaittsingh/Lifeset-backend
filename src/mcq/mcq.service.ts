@@ -30,6 +30,9 @@ export class McqService {
     page?: number;
     limit?: number;
   }) {
+    // Log incoming filters for debugging
+    console.log('📝 MCQ getQuestions called with filters:', filters);
+
     // Check if pagination was explicitly requested
     const hasExplicitPagination = filters.page !== undefined || filters.limit !== undefined;
     
@@ -57,6 +60,8 @@ export class McqService {
       where.articleId = filters.articleId;
     }
 
+    console.log('🔍 MCQ query where clause:', JSON.stringify(where));
+
     const [questions, total] = await Promise.all([
       this.prisma.mcqQuestion.findMany({
         where,
@@ -70,17 +75,16 @@ export class McqService {
       this.prisma.mcqQuestion.count({ where }),
     ]);
 
-    // If no explicit pagination parameters were provided, return questions directly as array
-    // This matches the categories endpoint structure and is easier for mobile app to consume
-    // After TransformInterceptor: { success: true, data: [...questions], timestamp: "..." }
-    // Mobile app can access: response.data directly
+    console.log(`✅ MCQ found ${questions.length} questions (total: ${total})`);
+
+    // Always return consistent format for mobile app
+    // Mobile app expects: { success: true, data: [...questions] } or { success: true, data: { data: [...], pagination: {...} } }
     if (!hasExplicitPagination) {
+      // Return as array for direct consumption
       return questions;
     }
 
-    // Otherwise return paginated structure
-    // After TransformInterceptor: { success: true, data: { data: [...], pagination: {...} }, timestamp: "..." }
-    // Mobile app should access: response.data.data for questions array
+    // Return paginated structure
     return {
       data: questions,
       pagination: {
