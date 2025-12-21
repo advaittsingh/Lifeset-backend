@@ -183,65 +183,74 @@ export class CmsService {
   }
 
   async getGeneralKnowledge(filters?: any) {
-    const where: any = { 
-      postType: 'COLLEGE_FEED',
-      isActive: true,
-      // Note: articleType filtering removed - all COLLEGE_FEED posts are returned
-    };
-    if (filters?.categoryId) where.categoryId = filters.categoryId;
-    if (filters?.search) {
-      where.OR = [
-        { title: { contains: filters.search, mode: 'insensitive' } },
-        { description: { contains: filters.search, mode: 'insensitive' } },
-      ];
-    }
+    try {
+      const where: any = { 
+        postType: 'COLLEGE_FEED',
+        isActive: true,
+        // Note: articleType filtering removed - all COLLEGE_FEED posts are returned
+      };
+      if (filters?.categoryId) where.categoryId = filters.categoryId;
+      if (filters?.search) {
+        where.OR = [
+          { title: { contains: filters.search, mode: 'insensitive' } },
+          { description: { contains: filters.search, mode: 'insensitive' } },
+        ];
+      }
 
-    const page = parseInt(String(filters?.page || 1), 10);
-    const limit = parseInt(String(filters?.limit || 20), 10);
-    const skip = (page - 1) * limit;
+      const page = parseInt(String(filters?.page || 1), 10);
+      const limit = parseInt(String(filters?.limit || 20), 10);
+      const skip = (page - 1) * limit;
 
-    const [posts, total] = await Promise.all([
-      this.prisma.post.findMany({
-        where,
-        include: { user: true, category: true },
-        orderBy: { createdAt: 'desc' },
-        skip,
-        take: limit,
-      }),
-      this.prisma.post.count({ where }),
-    ]);
+      const [posts, total] = await Promise.all([
+        this.prisma.post.findMany({
+          where,
+          include: { user: true, category: true },
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+        }),
+        this.prisma.post.count({ where }),
+      ]);
 
-    // Add searchText to each post for enhanced search
-    const postsWithSearchText = posts.map(post => {
-      const metadata = (post.metadata as any) || {};
-      const searchText = [
-        post.title,
-        post.description,
-        metadata.fullArticle || metadata.content || '',
-        metadata.headline || '',
-      ]
-        .filter(Boolean)
-        .join(' ')
-        .toLowerCase()
-        .replace(/<[^>]*>/g, '') // Remove HTML tags
-        .replace(/\s+/g, ' ')
-        .trim();
+      // Add searchText to each post for enhanced search
+      const postsWithSearchText = posts.map(post => {
+        const metadata = (post.metadata as any) || {};
+        const searchText = [
+          post.title,
+          post.description,
+          metadata.fullArticle || metadata.content || '',
+          metadata.headline || '',
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+          .replace(/<[^>]*>/g, '') // Remove HTML tags
+          .replace(/\s+/g, ' ')
+          .trim();
+
+        return {
+          ...post,
+          searchText,
+        };
+      });
 
       return {
-        ...post,
-        searchText,
+        data: postsWithSearchText,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
       };
-    });
-
-    return {
-      data: postsWithSearchText,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
+    } catch (error: any) {
+      this.logger.error(`Error fetching general knowledge articles: ${error.message}`, error.stack);
+      // Re-throw with more context if it's a known error type
+      if (error.code === 'P1001' || error.message?.includes('connect') || error.message?.includes('DATABASE_URL')) {
+        throw new BadRequestException('Database connection error. Please check DATABASE_URL environment variable.');
+      }
+      throw new BadRequestException(`Failed to fetch general knowledge articles: ${error.message}`);
+    }
   }
 
   async getGeneralKnowledgeById(id: string) {
@@ -386,6 +395,55 @@ export class CmsService {
     }
   }
 
+  async getCategories() {
+    try {
+      // Get all parent categories (where parentCategoryId is null) for general knowledge
+      const categories = await this.prisma.wallCategory.findMany({
+        where: {
+          parentCategoryId: null,
+          isActive: true,
+          // Optionally filter by categoryFor if needed
+          // categoryFor: 'GENERAL_KNOWLEDGE', // Uncomment if you want to filter by categoryFor
+        },
+        orderBy: { name: 'asc' },
+        include: {
+          _count: {
+            select: {
+              posts: {
+                where: {
+                  postType: 'COLLEGE_FEED',
+                  isActive: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      // Map to include postCount
+      const categoriesWithCounts = categories.map(cat => ({
+        id: cat.id,
+        name: cat.name,
+        description: cat.description,
+        isActive: cat.isActive,
+        postCount: cat._count.posts,
+        createdAt: cat.createdAt,
+        updatedAt: cat.updatedAt,
+      }));
+
+      return {
+        data: categoriesWithCounts,
+        count: categoriesWithCounts.length,
+      };
+    } catch (error: any) {
+      this.logger.error(`Error getting general knowledge categories: ${error.message}`, error.stack);
+      if (error.code === 'P1001' || error.message?.includes('connect') || error.message?.includes('DATABASE_URL')) {
+        throw new BadRequestException('Database connection error. Please check DATABASE_URL environment variable.');
+      }
+      throw new BadRequestException(`Failed to get categories: ${error.message}`);
+    }
+  }
+
   async getSubcategories(categoryId: string) {
     try {
       // Verify category exists
@@ -415,6 +473,9 @@ export class CmsService {
         throw error;
       }
       this.logger.error(`Error getting subcategories for category ${categoryId}: ${error.message}`, error.stack);
+      if (error.code === 'P1001' || error.message?.includes('connect') || error.message?.includes('DATABASE_URL')) {
+        throw new BadRequestException('Database connection error. Please check DATABASE_URL environment variable.');
+      }
       throw new BadRequestException(`Failed to get subcategories: ${error.message}`);
     }
   }

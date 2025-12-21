@@ -58,6 +58,25 @@ export class CmsController {
     return this.cmsService.getGeneralKnowledge(filters);
   }
 
+  @Get('general-knowledge/categories')
+  @ApiOperation({ summary: 'Get all general knowledge categories (parent categories)' })
+  async getCategories() {
+    return this.cmsService.getCategories();
+  }
+
+  @Get('general-knowledge/categories/:categoryId/subcategories')
+  @ApiOperation({ summary: 'Get subcategories for a category' })
+  async getSubcategories(@Param('categoryId') categoryId: string) {
+    return this.cmsService.getSubcategories(categoryId);
+  }
+
+  @Get('general-knowledge/daily-digest')
+  @ApiOperation({ summary: 'Get 20 random general knowledge articles for daily digest' })
+  async getGeneralKnowledgeDailyDigest(@Query('excludePublished') excludePublished?: string) {
+    const excludePublishedBool = excludePublished === 'true' || excludePublished === undefined;
+    return this.cmsService.getGeneralKnowledgeDailyDigest(excludePublishedBool);
+  }
+
   @Get('general-knowledge/:id')
   @ApiOperation({ summary: 'Get general knowledge article by ID' })
   async getGeneralKnowledgeById(@Param('id') id: string) {
@@ -68,19 +87,6 @@ export class CmsController {
   @ApiOperation({ summary: 'Get last 24 hours current affairs for daily digest' })
   async getCurrentAffairsDailyDigest() {
     return this.cmsService.getCurrentAffairsDailyDigest();
-  }
-
-  @Get('general-knowledge/daily-digest')
-  @ApiOperation({ summary: 'Get 20 random general knowledge articles for daily digest' })
-  async getGeneralKnowledgeDailyDigest(@Query('excludePublished') excludePublished?: string) {
-    const excludePublishedBool = excludePublished === 'true' || excludePublished === undefined;
-    return this.cmsService.getGeneralKnowledgeDailyDigest(excludePublishedBool);
-  }
-
-  @Get('general-knowledge/categories/:categoryId/subcategories')
-  @ApiOperation({ summary: 'Get subcategories for a category' })
-  async getSubcategories(@Param('categoryId') categoryId: string) {
-    return this.cmsService.getSubcategories(categoryId);
   }
 
   @Get('general-knowledge/subcategories/:subCategoryId/sections')
