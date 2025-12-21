@@ -455,34 +455,66 @@ export class CmsAdminService {
   async getPersonalityQuestions(filters?: { isPublished?: boolean; includeInactive?: boolean | string }) {
     try {
       // Handle includeInactive parameter (can be boolean or string from query params)
-      const includeInactive = filters?.includeInactive === true || 
-                              filters?.includeInactive === 'true' || 
-                              String(filters?.includeInactive).toLowerCase() === 'true';
-      
-      const where: any = {};
-      
-      // If includeInactive is false/undefined, show only active questions
-      // If includeInactive is true, show all questions (including inactive)
-      if (!includeInactive) {
-        where.isActive = true;
+      let includeInactive = false;
+      if (filters?.includeInactive !== undefined) {
+        if (typeof filters.includeInactive === 'boolean') {
+          includeInactive = filters.includeInactive;
+        } else if (typeof filters.includeInactive === 'string') {
+          includeInactive = filters.includeInactive.toLowerCase() === 'true';
+        }
       }
-      // If includeInactive is true, don't filter by isActive (show all)
+      
+      // Build where clause - always include at least isActive filter for consistency
+      const where: any = includeInactive ? {} : { isActive: true };
       
       // Note: PersonalityQuiz doesn't have isPublished field
       // If frontend sends isPublished filter, we ignore it
       
-      const questions = await this.prisma.personalityQuiz.findMany({
-        where,
-        orderBy: { order: 'asc' },
-      });
+      // Execute query with error handling
+      let questions;
+      try {
+        // Try ordering by order field first
+        questions = await this.prisma.personalityQuiz.findMany({
+          where,
+          orderBy: { order: 'asc' },
+        });
+      } catch (dbError: any) {
+        console.error('Database error fetching personality questions (orderBy order failed):', dbError.message, dbError.code);
+        // If orderBy fails, try ordering by createdAt instead
+        try {
+          questions = await this.prisma.personalityQuiz.findMany({
+            where,
+            orderBy: { createdAt: 'asc' },
+          });
+          console.log(`Fallback query succeeded: Found ${questions.length} questions (ordered by createdAt)`);
+        } catch (fallbackError: any) {
+          console.error('Fallback query also failed:', fallbackError.message);
+          // Last resort: try without orderBy
+          try {
+            questions = await this.prisma.personalityQuiz.findMany({
+              where,
+            });
+            console.log(`No-order query succeeded: Found ${questions.length} questions`);
+          } catch (noOrderError: any) {
+            console.error('No-order query also failed:', noOrderError.message);
+            throw dbError; // Throw original error
+          }
+        }
+      }
       
       // Log for debugging
-      console.log(`Found ${questions.length} personality quiz questions (includeInactive: ${includeInactive}, isActive filter: ${where.isActive || 'none'}, where clause:`, JSON.stringify(where));
+      console.log(`Found ${questions.length} personality quiz questions (includeInactive: ${includeInactive})`);
       
       // Return questions array directly (frontend expects array)
       return questions;
     } catch (error: any) {
-      console.error('Error fetching personality quiz questions:', error);
+      console.error('Error fetching personality quiz questions:', {
+        message: error.message,
+        code: error.code,
+        name: error.name,
+        stack: error.stack?.substring(0, 500),
+      });
+      // Re-throw the original error to preserve status codes
       throw error;
     }
   }
