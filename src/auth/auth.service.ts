@@ -615,24 +615,70 @@ export class AuthService {
     const preferredLanguage = studentProfile?.preferredLanguage || null;
     const userStatus = studentProfile?.userStatus || null;
     
-    // User is considered new if:
-    // 1. User was just created, OR
-    // 2. Profile lacks language/status (incomplete setup)
-    const hasLanguage = preferredLanguage && typeof preferredLanguage === 'string' && preferredLanguage.trim().length > 0;
-    const hasStatus = userStatus && typeof userStatus === 'string' && userStatus.trim().length > 0;
+    // Robust checks for language and status
+    const hasLanguage = preferredLanguage && 
+                       typeof preferredLanguage === 'string' && 
+                       preferredLanguage.trim().length > 0 &&
+                       preferredLanguage.trim() !== 'null' &&
+                       preferredLanguage.trim() !== 'undefined';
+    
+    const hasStatus = userStatus && 
+                     typeof userStatus === 'string' && 
+                     userStatus.trim().length > 0 &&
+                     userStatus.trim() !== 'null' &&
+                     userStatus.trim() !== 'undefined';
+    
     const profileSetupComplete = hasLanguage && hasStatus;
     
-    // If user wasn't just created, check if profile is incomplete
-    if (!isNewUser && !profileSetupComplete) {
+    // Additional check: User created very recently (within last 30 seconds) is also considered new
+    const userCreatedRecently = user.createdAt && 
+      (Date.now() - new Date(user.createdAt).getTime()) < 30000; // 30 seconds
+    
+    // User is considered NEW if:
+    // 1. User was just created in this request (userCreated = true), OR
+    // 2. User was created very recently (within 30 seconds), OR
+    // 3. Profile setup is incomplete (missing language or status)
+    // Priority: If user was just created, ALWAYS mark as new user
+    if (userCreated) {
+      isNewUser = true; // Explicitly set - user was just created
+      this.logger.log(`✅ User ${user.id} is NEW (just created in this request)`);
+    } else if (userCreatedRecently) {
+      isNewUser = true; // User created very recently, treat as new
+      this.logger.log(`✅ User ${user.id} is NEW (created recently: ${Math.round((Date.now() - new Date(user.createdAt).getTime()) / 1000)}s ago)`);
+    } else if (!profileSetupComplete) {
       isNewUser = true; // Treat as new user if profile setup is incomplete
+      this.logger.log(`✅ User ${user.id} is NEW (incomplete profile: language=${hasLanguage}, status=${hasStatus})`);
+    } else {
+      isNewUser = false; // Explicitly set - existing user with complete profile
+      this.logger.log(`❌ User ${user.id} is EXISTING (profile complete: language=${preferredLanguage}, status=${userStatus})`);
     }
+    
+    // Log all detection values for debugging
+    this.logger.log(`🔍 New User Detection Debug:`, {
+      userId: user.id,
+      userCreated,
+      userCreatedRecently,
+      hasLanguage,
+      hasStatus,
+      profileSetupComplete,
+      preferredLanguage,
+      userStatus,
+      isNewUser,
+      createdAt: user.createdAt,
+    });
 
     // Generate tokens
     const tokens = await this.generateTokens(user);
 
     // Return user object and tokens with new user detection flags
-    return {
+    // Flags are included at both root level and data level for maximum compatibility
+    const response = {
       success: true,
+      // New user detection flags at root level (for easy access)
+      isNewUser: isNewUser,
+      userCreated: userCreated,
+      newUser: isNewUser, // Alias for compatibility
+      profileSetupComplete: profileSetupComplete,
       data: {
         user: {
           id: user.id,
@@ -657,6 +703,7 @@ export class AuthService {
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
         // New user detection flags (Method 1: Backend response indicators)
+        // Also included in data for nested access
         isNewUser: isNewUser,
         userCreated: userCreated,
         newUser: isNewUser, // Alias for compatibility
@@ -668,6 +715,16 @@ export class AuthService {
         hasStudentProfile: !!studentProfile,
       },
     };
+    
+    // Log final response for debugging
+    this.logger.log(`📤 OTP Verification Response:`, {
+      userId: user.id,
+      isNewUser: response.isNewUser,
+      userCreated: response.userCreated,
+      profileSetupComplete: response.profileSetupComplete,
+    });
+    
+    return response;
   }
 
   async generateTokens(user: any) {
