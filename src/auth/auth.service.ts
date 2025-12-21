@@ -570,6 +570,10 @@ export class AuthService {
       },
     });
 
+    // Track if user was just created (new user)
+    let isNewUser = false;
+    let userCreated = false;
+
     // Auto-create user if doesn't exist
     if (!user) {
       user = await this.prisma.user.create({
@@ -590,7 +594,9 @@ export class AuthService {
           studentProfile: true,
         },
       });
-      this.logger.log(`Auto-created user for mobile: ${normalizedPhone.substring(0, 3)}***`);
+      isNewUser = true;
+      userCreated = true;
+      this.logger.log(`Auto-created new user for mobile: ${normalizedPhone.substring(0, 3)}***`);
     } else {
       // Mark user as verified if not already
       if (!user.isVerified) {
@@ -604,10 +610,27 @@ export class AuthService {
       }
     }
 
+    // Check if user profile setup is complete
+    const studentProfile = user.studentProfile as any;
+    const preferredLanguage = studentProfile?.preferredLanguage || null;
+    const userStatus = studentProfile?.userStatus || null;
+    
+    // User is considered new if:
+    // 1. User was just created, OR
+    // 2. Profile lacks language/status (incomplete setup)
+    const hasLanguage = preferredLanguage && typeof preferredLanguage === 'string' && preferredLanguage.trim().length > 0;
+    const hasStatus = userStatus && typeof userStatus === 'string' && userStatus.trim().length > 0;
+    const profileSetupComplete = hasLanguage && hasStatus;
+    
+    // If user wasn't just created, check if profile is incomplete
+    if (!isNewUser && !profileSetupComplete) {
+      isNewUser = true; // Treat as new user if profile setup is incomplete
+    }
+
     // Generate tokens
     const tokens = await this.generateTokens(user);
 
-    // Return user object and tokens
+    // Return user object and tokens with new user detection flags
     return {
       success: true,
       data: {
@@ -619,18 +642,30 @@ export class AuthService {
           isActive: user.isActive,
           isVerified: user.isVerified,
           profileImage: user.profileImage,
-          studentProfile: user.studentProfile ? {
-            id: user.studentProfile.id,
-            firstName: user.studentProfile.firstName,
-            lastName: user.studentProfile.lastName,
-            preferredLanguage: (user.studentProfile as any).preferredLanguage || null,
-            userStatus: (user.studentProfile as any).userStatus || null,
+          studentProfile: studentProfile ? {
+            id: studentProfile.id,
+            firstName: studentProfile.firstName || '',
+            lastName: studentProfile.lastName || '',
+            preferredLanguage: preferredLanguage,
+            userStatus: userStatus,
+            // Include full profile object for profile setup check
+            profileSetupComplete: profileSetupComplete,
           } : null,
           createdAt: user.createdAt,
           updatedAt: user.updatedAt,
         },
         accessToken: tokens.accessToken,
         refreshToken: tokens.refreshToken,
+        // New user detection flags (Method 1: Backend response indicators)
+        isNewUser: isNewUser,
+        userCreated: userCreated,
+        newUser: isNewUser, // Alias for compatibility
+        // Profile setup status
+        profileSetupComplete: profileSetupComplete,
+        // Additional detection helpers
+        hasPreferredLanguage: hasLanguage,
+        hasUserStatus: hasStatus,
+        hasStudentProfile: !!studentProfile,
       },
     };
   }
