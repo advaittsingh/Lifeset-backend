@@ -62,7 +62,17 @@ export class AuthController {
   @Post('refresh')
   @ApiOperation({ summary: 'Refresh access token' })
   async refresh(@Body() data: RefreshTokenDto) {
-    return this.authService.refreshToken(data.refreshToken);
+    try {
+      const tokens = await this.authService.refreshToken(data.refreshToken);
+      return {
+        success: true,
+        data: tokens,
+      };
+    } catch (error: any) {
+      // Re-throw to let the exception filter handle it
+      // But ensure the error message is preserved
+      throw error;
+    }
   }
 
   @UseGuards(JwtAuthGuard)

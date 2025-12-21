@@ -761,17 +761,29 @@ export class AuthService {
   }
 
   async refreshToken(refreshToken: string) {
+    let userId: string | null = null;
+    let sessionId: string | null = null;
+    
     try {
+      // Verify JWT token first
       const payload = this.jwtService.verify(refreshToken, {
         secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
       });
+      userId = payload.sub;
 
       const user = await this.prisma.user.findUnique({
-        where: { id: payload.sub },
+        where: { id: userId },
       });
 
       if (!user || !user.isActive) {
-        throw new UnauthorizedException('User not found or inactive');
+        this.logger.warn(`Token refresh failed: User ${userId} not found or inactive`);
+        // Invalidate all sessions for this user
+        if (userId) {
+          await this.prisma.session.deleteMany({
+            where: { userId },
+          });
+        }
+        throw new UnauthorizedException('INVALID_TOKEN_USER_NOT_FOUND_OR_INACTIVE');
       }
 
       // Verify refresh token exists in session
@@ -784,8 +796,15 @@ export class AuthService {
       });
 
       if (!session) {
-        throw new UnauthorizedException('Refresh token not found or expired');
+        this.logger.warn(`Token refresh failed: Session not found or expired for user ${userId}`);
+        // Invalidate all sessions for this user
+        await this.prisma.session.deleteMany({
+          where: { userId: user.id },
+        });
+        throw new UnauthorizedException('INVALID_TOKEN_SESSION_NOT_FOUND_OR_EXPIRED');
       }
+
+      sessionId = session.id;
 
       // Generate new tokens
       const tokens = await this.generateTokens(user);
@@ -800,13 +819,62 @@ export class AuthService {
         },
       });
 
+      this.logger.log(`✅ Token refresh successful for user ${userId}`);
       return tokens;
-    } catch (error) {
+    } catch (error: any) {
+      // Handle JWT verification errors (expired, invalid signature, etc.)
+      if (error.name === 'TokenExpiredError') {
+        this.logger.warn(`Token refresh failed: Token expired for user ${userId || 'unknown'}`);
+        // Invalidate sessions if we know the user
+        if (userId) {
+          await this.prisma.session.deleteMany({
+            where: { userId },
+          });
+        }
+        throw new UnauthorizedException('INVALID_TOKEN_EXPIRED');
+      }
+      
+      if (error.name === 'JsonWebTokenError' || error.name === 'NotBeforeError') {
+        this.logger.warn(`Token refresh failed: Invalid token format for user ${userId || 'unknown'}`);
+        // Invalidate sessions if we know the user
+        if (userId) {
+          await this.prisma.session.deleteMany({
+            where: { userId },
+          });
+        }
+        throw new UnauthorizedException('INVALID_TOKEN_MALFORMED');
+      }
+
+      // Re-throw UnauthorizedException with clear error codes
       if (error instanceof UnauthorizedException) {
+        this.logger.error(`Token refresh failed: ${error.message}`, {
+          userId,
+          sessionId,
+          errorCode: error.message,
+        });
         throw error;
       }
-      this.logger.error(`Token refresh failed: ${error.message}`, error.stack);
-      throw new UnauthorizedException('Invalid refresh token');
+
+      // Handle any other errors
+      this.logger.error(`Token refresh failed: ${error.message}`, {
+        userId,
+        sessionId,
+        errorName: error.name,
+        errorStack: error.stack,
+      });
+      
+      // Invalidate sessions if we know the user
+      if (userId) {
+        try {
+          await this.prisma.session.deleteMany({
+            where: { userId },
+          });
+        } catch (deleteError) {
+          this.logger.error(`Failed to invalidate sessions for user ${userId}: ${deleteError.message}`);
+        }
+      }
+      
+      throw new UnauthorizedException('INVALID_TOKEN_REFRESH_FAILED');
     }
   }
 
