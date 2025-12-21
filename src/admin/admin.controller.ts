@@ -1,10 +1,11 @@
-import { Controller, Get, Post, Put, Patch, Delete, Body, Param, Query, UseGuards, UseInterceptors, UploadedFile } from '@nestjs/common';
+import { Controller, Get, Post, Put, Patch, Delete, Body, Param, Query, UseGuards, UseInterceptors, UploadedFile, BadRequestException, NotFoundException } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Express } from 'express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { UserType, NotificationType } from '@/shared';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { CmsAdminService } from '../cms/cms-admin.service';
@@ -89,6 +90,34 @@ export class AdminController {
       where: { id },
       data: { isActive: false },
     });
+  }
+
+  @Delete('users/:id')
+  @ApiOperation({ summary: 'Delete user permanently' })
+  async deleteUser(@Param('id') id: string, @CurrentUser() currentUser: any) {
+    // Prevent deleting yourself
+    if (id === currentUser.id) {
+      throw new BadRequestException('You cannot delete your own account');
+    }
+
+    // Check if user exists
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    // Delete user (cascading deletes will handle related records)
+    await this.prisma.user.delete({
+      where: { id },
+    });
+
+    return {
+      success: true,
+      message: 'User deleted successfully',
+    };
   }
 
   // Posts Management
