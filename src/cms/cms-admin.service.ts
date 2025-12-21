@@ -452,15 +452,21 @@ export class CmsAdminService {
   }
 
   // ========== Know Yourself (Personality Quiz) ==========
-  async getPersonalityQuestions(filters?: { isPublished?: boolean; includeInactive?: boolean }) {
+  async getPersonalityQuestions(filters?: { isPublished?: boolean; includeInactive?: boolean | string }) {
     try {
-      // For admin panel, we might want to show all questions (including inactive)
-      // Default to showing all questions if includeInactive is true, otherwise only active
+      // Handle includeInactive parameter (can be boolean or string from query params)
+      const includeInactive = filters?.includeInactive === true || 
+                              filters?.includeInactive === 'true' || 
+                              String(filters?.includeInactive).toLowerCase() === 'true';
+      
       const where: any = {};
       
-      if (!filters?.includeInactive) {
+      // If includeInactive is false/undefined, show only active questions
+      // If includeInactive is true, show all questions (including inactive)
+      if (!includeInactive) {
         where.isActive = true;
       }
+      // If includeInactive is true, don't filter by isActive (show all)
       
       // Note: PersonalityQuiz doesn't have isPublished field
       // If frontend sends isPublished filter, we ignore it
@@ -471,8 +477,9 @@ export class CmsAdminService {
       });
       
       // Log for debugging
-      console.log(`Found ${questions.length} personality quiz questions (includeInactive: ${filters?.includeInactive || false})`);
+      console.log(`Found ${questions.length} personality quiz questions (includeInactive: ${includeInactive}, isActive filter: ${where.isActive || 'none'}, where clause:`, JSON.stringify(where));
       
+      // Return questions array directly (frontend expects array)
       return questions;
     } catch (error: any) {
       console.error('Error fetching personality quiz questions:', error);
