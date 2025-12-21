@@ -1,8 +1,10 @@
-import { Injectable, NotFoundException, BadRequestException, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, InternalServerErrorException, Logger } from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service';
 
 @Injectable()
 export class ProfilesService {
+  private readonly logger = new Logger(ProfilesService.name);
+
   constructor(private prisma: PrismaService) {}
 
   async getProfile(userId: string) {
@@ -35,7 +37,7 @@ export class ProfilesService {
         throw error;
       }
       // Log and wrap unexpected errors
-      console.error('Error fetching user profile:', error);
+      this.logger.error(`Error fetching user profile for user ${userId}: ${error.message}`, error.stack);
       throw new InternalServerErrorException('Failed to fetch user profile. Please try again.');
     }
   }
@@ -186,8 +188,7 @@ export class ProfilesService {
 
   async updateStudentProfile(userId: string, data: any) {
     // Log incoming data for debugging
-    console.log('📝 updateStudentProfile called with:', {
-      userId,
+    this.logger.log(`📝 updateStudentProfile called for user ${userId}`, {
       fieldsReceived: Object.keys(data),
       hasProjects: !!data.projects,
       hasExperience: !!(data.experience || data.experiences),
@@ -409,7 +410,7 @@ export class ProfilesService {
     if (!createFields.lastName) createFields.lastName = '';
 
     // Log what will be saved
-    console.log('💾 Saving profile with fields:', {
+    this.logger.log(`💾 Saving profile for user ${userId}`, {
       updateFields: Object.keys(updateFields),
       hasProjects: !!projectsToCreate,
       hasExperiences: !!experiencesToCreate,
@@ -421,12 +422,7 @@ export class ProfilesService {
       create: createFields,
     });
 
-    console.log('✅ Profile saved successfully:', {
-      profileId: updated.id,
-      fieldsUpdated: Object.keys(updateFields).length,
-    });
-
-    console.log('✅ Profile saved successfully:', {
+    this.logger.log(`✅ Profile saved successfully for user ${userId}`, {
       profileId: updated.id,
       fieldsUpdated: Object.keys(updateFields).length,
     });
@@ -467,55 +463,138 @@ export class ProfilesService {
 
     // Handle experience - delete existing and create new ones
     if (experiencesToCreate !== undefined) {
-      // Delete existing experiences
-      await this.prisma.experience.deleteMany({
-        where: { studentId: updated.id },
+      this.logger.log(`📝 Processing experiences for user ${userId}`, {
+        count: Array.isArray(experiencesToCreate) ? experiencesToCreate.length : 'not an array',
+        type: typeof experiencesToCreate,
       });
 
-      // Create new experiences
-      if (Array.isArray(experiencesToCreate) && experiencesToCreate.length > 0) {
-        await this.prisma.experience.createMany({
-          data: experiencesToCreate.map((exp: any) => {
-            // Parse startMonthYear to startDate (DateTime)
-            let startDate = new Date();
-            if (exp.startMonthYear) {
-              const [month, year] = exp.startMonthYear.split('/');
-              startDate = new Date(parseInt(year), parseInt(month) - 1, 1);
-            } else if (exp.startDate) {
-              startDate = new Date(exp.startDate);
-            }
-
-            // Parse endMonthYear to endDate (DateTime) if provided
-            let endDate: Date | null = null;
-            if (exp.endMonthYear) {
-              const [month, year] = exp.endMonthYear.split('/');
-              endDate = new Date(parseInt(year), parseInt(month) - 1, 1);
-            } else if (exp.endDate) {
-              endDate = new Date(exp.endDate);
-            }
-
-            return {
-              studentId: updated.id,
-              // New fields
-              companyName: exp.companyName || exp.company || null,
-              isFacultyMember: exp.isFacultyMember || false,
-              location: exp.location || null,
-              department: exp.department || null,
-              designation: exp.designation || exp.title || 'Untitled',
-              startMonthYear: exp.startMonthYear || null,
-              endMonthYear: exp.endMonthYear || null,
-              aboutRole: exp.aboutRole || exp.description || null,
-              currentlyWorking: exp.currentlyWorking || exp.isCurrent || false,
-              // Legacy fields (required)
-              title: exp.designation || exp.title || 'Untitled',
-              company: exp.companyName || exp.company || null,
-              description: exp.aboutRole || exp.description || null,
-              startDate,
-              endDate,
-              isCurrent: exp.currentlyWorking || exp.isCurrent || false,
-            };
-          }),
+      // Delete existing experiences
+      try {
+        await this.prisma.experience.deleteMany({
+          where: { studentId: updated.id },
         });
+        this.logger.log(`✅ Deleted existing experiences for user ${userId}`);
+      } catch (deleteError: any) {
+        this.logger.warn(`⚠️ Error deleting existing experiences for user ${userId}: ${deleteError.message}`);
+        // Continue even if delete fails - might be first time creating experiences
+      }
+
+      // Create new experiences (handle both empty array and non-empty array)
+      if (Array.isArray(experiencesToCreate)) {
+        if (experiencesToCreate.length > 0) {
+          try {
+            const experienceData = experiencesToCreate.map((exp: any, index: number) => {
+              // Ensure required fields have defaults
+              const title = exp.designation || exp.title || `Experience ${index + 1}`;
+              
+              // Parse startMonthYear to startDate (DateTime) with validation
+              let startDate: Date;
+              try {
+                if (exp.startMonthYear) {
+                  const parts = exp.startMonthYear.split('/');
+                  if (parts.length === 2) {
+                    const month = parseInt(parts[0], 10);
+                    const year = parseInt(parts[1], 10);
+                    if (month >= 1 && month <= 12 && year > 1900 && year <= 2100) {
+                      startDate = new Date(year, month - 1, 1);
+                    } else {
+                      this.logger.warn(`Invalid date format for startMonthYear: ${exp.startMonthYear}, using current date`);
+                      startDate = new Date();
+                    }
+                  } else {
+                    this.logger.warn(`Invalid startMonthYear format: ${exp.startMonthYear}, expected MM/YYYY`);
+                    startDate = new Date();
+                  }
+                } else if (exp.startDate) {
+                  startDate = new Date(exp.startDate);
+                  // Validate the date
+                  if (isNaN(startDate.getTime())) {
+                    this.logger.warn(`Invalid startDate: ${exp.startDate}, using current date`);
+                    startDate = new Date();
+                  }
+                } else {
+                  // Default to current date if no start date provided
+                  startDate = new Date();
+                }
+                } catch (dateError: any) {
+                this.logger.error(`Error parsing start date for experience ${index + 1}: ${dateError.message}`);
+                startDate = new Date();
+              }
+
+              // Parse endMonthYear to endDate (DateTime) if provided
+              let endDate: Date | null = null;
+              if (!exp.currentlyWorking && !exp.isCurrent) {
+                try {
+                  if (exp.endMonthYear) {
+                    const parts = exp.endMonthYear.split('/');
+                    if (parts.length === 2) {
+                      const month = parseInt(parts[0], 10);
+                      const year = parseInt(parts[1], 10);
+                      if (month >= 1 && month <= 12 && year > 1900 && year <= 2100) {
+                        endDate = new Date(year, month - 1, 1);
+                      } else {
+                        this.logger.warn(`Invalid date format for endMonthYear: ${exp.endMonthYear}`);
+                      }
+                    }
+                  } else if (exp.endDate) {
+                    endDate = new Date(exp.endDate);
+                    if (isNaN(endDate.getTime())) {
+                      this.logger.warn(`Invalid endDate: ${exp.endDate}`);
+                      endDate = null;
+                    }
+                  }
+                } catch (dateError: any) {
+                  this.logger.error(`Error parsing end date for experience ${index + 1}: ${dateError.message}`);
+                  endDate = null;
+                }
+              }
+
+              return {
+                studentId: updated.id,
+                // Required field: title (must not be null/empty)
+                title: title,
+                // New fields
+                companyName: exp.companyName || exp.company || null,
+                company: exp.companyName || exp.company || null,
+                isFacultyMember: exp.isFacultyMember || false,
+                location: exp.location || null,
+                department: exp.department || null,
+                designation: exp.designation || exp.title || title,
+                startMonthYear: exp.startMonthYear || null,
+                endMonthYear: exp.endMonthYear || null,
+                aboutRole: exp.aboutRole || exp.description || null,
+                description: exp.aboutRole || exp.description || null,
+                currentlyWorking: exp.currentlyWorking || exp.isCurrent || false,
+                isCurrent: exp.currentlyWorking || exp.isCurrent || false,
+                // Required DateTime field
+                startDate,
+                // Optional DateTime field
+                endDate,
+              };
+            });
+
+            this.logger.log(`💾 Creating ${experienceData.length} experience records for user ${userId}...`);
+            await this.prisma.experience.createMany({
+              data: experienceData,
+              skipDuplicates: true, // Skip duplicates if any
+            });
+            this.logger.log(`✅ Successfully created ${experienceData.length} experience records for user ${userId}`);
+          } catch (createError: any) {
+            this.logger.error(`❌ Error creating experiences for user ${userId}`, {
+              message: createError.message,
+              code: createError.code,
+              meta: createError.meta,
+            });
+            throw new BadRequestException(
+              `Failed to save experiences: ${createError.message}. Please check the data format.`
+            );
+          }
+        } else {
+          this.logger.log(`ℹ️ Empty experiences array - all experiences removed for user ${userId}`);
+        }
+      } else {
+        this.logger.warn(`⚠️ experiencesToCreate is not an array for user ${userId}: ${typeof experiencesToCreate}`);
+        throw new BadRequestException('Experiences must be an array');
       }
     }
 
