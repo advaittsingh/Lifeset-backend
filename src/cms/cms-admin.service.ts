@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, ConflictException, InternalServerErrorException, Logger } from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { countWords, countPlainTextCharacters } from '../common/utils/validation.helpers';
 import { updateCategoryPostCount } from '../common/utils/category.helpers';
@@ -6,6 +6,8 @@ import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class CmsAdminService {
+  private readonly logger = new Logger(CmsAdminService.name);
+  
   constructor(private prisma: PrismaService) {}
 
   // ========== Current Affairs & General Knowledge ==========
@@ -473,49 +475,49 @@ export class CmsAdminService {
       // Execute query with error handling
       let questions;
       try {
-        // Try ordering by order field first
+        // First, try to get all questions without orderBy to avoid null order issues
         questions = await this.prisma.personalityQuiz.findMany({
           where,
-          orderBy: { order: 'asc' },
         });
-      } catch (dbError: any) {
-        console.error('Database error fetching personality questions (orderBy order failed):', dbError.message, dbError.code);
-        // If orderBy fails, try ordering by createdAt instead
-        try {
-          questions = await this.prisma.personalityQuiz.findMany({
-            where,
-            orderBy: { createdAt: 'asc' },
-          });
-          console.log(`Fallback query succeeded: Found ${questions.length} questions (ordered by createdAt)`);
-        } catch (fallbackError: any) {
-          console.error('Fallback query also failed:', fallbackError.message);
-          // Last resort: try without orderBy
-          try {
-            questions = await this.prisma.personalityQuiz.findMany({
-              where,
-            });
-            console.log(`No-order query succeeded: Found ${questions.length} questions`);
-          } catch (noOrderError: any) {
-            console.error('No-order query also failed:', noOrderError.message);
-            throw dbError; // Throw original error
+        
+        // Manually sort: questions by order (ascending), with createdAt as secondary sort
+        // Handle potential null/undefined orders (defensive programming for data inconsistencies)
+        questions = questions.sort((a, b) => {
+          const aOrder = a.order ?? Number.MAX_SAFE_INTEGER; // Put null/undefined at end
+          const bOrder = b.order ?? Number.MAX_SAFE_INTEGER;
+          
+          if (aOrder !== bOrder) {
+            return aOrder - bOrder;
           }
-        }
+          // If order is same, sort by createdAt
+          return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+        });
+        
+        this.logger.log(`✅ Successfully fetched ${questions.length} personality quiz questions (includeInactive: ${includeInactive})`);
+      } catch (dbError: any) {
+        this.logger.error(`❌ Database error fetching personality questions: ${dbError.message}`, dbError.stack);
+        throw new InternalServerErrorException(
+          `Failed to fetch personality questions: ${dbError.message}. Please check database connection.`
+        );
       }
       
-      // Log for debugging
-      console.log(`Found ${questions.length} personality quiz questions (includeInactive: ${includeInactive})`);
-      
       // Return questions array directly (frontend expects array)
-      return questions;
+      return questions || [];
     } catch (error: any) {
-      console.error('Error fetching personality quiz questions:', {
-        message: error.message,
-        code: error.code,
-        name: error.name,
-        stack: error.stack?.substring(0, 500),
-      });
-      // Re-throw the original error to preserve status codes
-      throw error;
+      this.logger.error(`❌ Error fetching personality quiz questions: ${error.message}`, error.stack);
+      
+      // If it's already an HttpException, re-throw it
+      if (error instanceof BadRequestException || 
+          error instanceof NotFoundException || 
+          error instanceof ConflictException ||
+          error instanceof InternalServerErrorException) {
+        throw error;
+      }
+      
+      // Convert unknown errors to InternalServerErrorException with safe message
+      throw new InternalServerErrorException(
+        `Failed to fetch personality questions: ${error.message || 'Unknown error'}. Please try again or contact support.`
+      );
     }
   }
 
