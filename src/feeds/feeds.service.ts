@@ -336,8 +336,9 @@ export class FeedsService {
     const metadata = feed.metadata as any || {};
     return {
       ...feed,
-      // Extract full content from metadata - this is the full article text
-      content: metadata.content || feed.description, // Use full content if available, fallback to description
+      // Extract full content from metadata - this is the full article text with HTML formatting
+      content: metadata.fullArticle || metadata.content || feed.description, // Use fullArticle (with HTML) if available, fallback to content, then description
+      fullArticle: metadata.fullArticle || null, // Also return as fullArticle for clarity
       quickViewContent: metadata.quickViewContent || null,
       headline: metadata.headline || null,
       articleDate: metadata.articleDate || null,

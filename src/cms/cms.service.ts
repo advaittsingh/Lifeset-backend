@@ -82,8 +82,9 @@ export class CmsService {
     const metadata = post.metadata as any || {};
     return {
       ...post,
-      // Extract full content from metadata - this is the full article text
-      content: metadata.content || post.description, // Use full content if available, fallback to description
+      // Extract full content from metadata - this is the full article text with HTML formatting
+      content: metadata.fullArticle || metadata.content || post.description, // Use fullArticle (with HTML) if available, fallback to content, then description
+      fullArticle: metadata.fullArticle || null, // Also return as fullArticle for clarity (preserves HTML formatting)
       quickViewContent: metadata.quickViewContent || null,
       isPublished: metadata.isPublished !== undefined ? metadata.isPublished : post.isActive,
       // Include other metadata fields that might be useful
@@ -151,8 +152,9 @@ export class CmsService {
     const metadata = post.metadata as any || {};
     return {
       ...post,
-      // Extract full content from metadata - this is the full article text
-      content: metadata.content || post.description, // Use full content if available, fallback to description
+      // Extract full content from metadata - this is the full article text with HTML formatting
+      content: metadata.fullArticle || metadata.content || post.description, // Use fullArticle (with HTML) if available, fallback to content, then description
+      fullArticle: metadata.fullArticle || null, // Also return as fullArticle for clarity (preserves HTML formatting)
       quickViewContent: metadata.quickViewContent || null,
       isPublished: metadata.isPublished !== undefined ? metadata.isPublished : post.isActive,
       // Include other metadata fields that might be useful
