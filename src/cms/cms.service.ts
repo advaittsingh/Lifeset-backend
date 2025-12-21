@@ -82,7 +82,13 @@ export class CmsService {
     const metadata = post.metadata as any || {};
     return {
       ...post,
+      // Extract full content from metadata - this is the full article text
+      content: metadata.content || post.description, // Use full content if available, fallback to description
+      quickViewContent: metadata.quickViewContent || null,
       isPublished: metadata.isPublished !== undefined ? metadata.isPublished : post.isActive,
+      // Include other metadata fields that might be useful
+      headline: metadata.headline || null,
+      articleDate: metadata.articleDate || null,
     };
   }
 
@@ -145,7 +151,13 @@ export class CmsService {
     const metadata = post.metadata as any || {};
     return {
       ...post,
+      // Extract full content from metadata - this is the full article text
+      content: metadata.content || post.description, // Use full content if available, fallback to description
+      quickViewContent: metadata.quickViewContent || null,
       isPublished: metadata.isPublished !== undefined ? metadata.isPublished : post.isActive,
+      // Include other metadata fields that might be useful
+      headline: metadata.headline || null,
+      articleDate: metadata.articleDate || null,
     };
   }
 

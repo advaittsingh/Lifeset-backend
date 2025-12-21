@@ -332,7 +332,16 @@ export class FeedsService {
       throw new NotFoundException('Feed not found');
     }
 
-    return feed;
+    // Extract full content from metadata for articles
+    const metadata = feed.metadata as any || {};
+    return {
+      ...feed,
+      // Extract full content from metadata - this is the full article text
+      content: metadata.content || feed.description, // Use full content if available, fallback to description
+      quickViewContent: metadata.quickViewContent || null,
+      headline: metadata.headline || null,
+      articleDate: metadata.articleDate || null,
+    };
   }
 
   async likeFeed(userId: string, feedId: string) {
