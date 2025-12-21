@@ -452,18 +452,32 @@ export class CmsAdminService {
   }
 
   // ========== Know Yourself (Personality Quiz) ==========
-  async getPersonalityQuestions(filters?: { isPublished?: boolean }) {
-    const where: any = { isActive: true };
-    
-    // Filter by isPublished if provided
-    if (filters?.isPublished !== undefined) {
-      where.isPublished = filters.isPublished;
+  async getPersonalityQuestions(filters?: { isPublished?: boolean; includeInactive?: boolean }) {
+    try {
+      // For admin panel, we might want to show all questions (including inactive)
+      // Default to showing all questions if includeInactive is true, otherwise only active
+      const where: any = {};
+      
+      if (!filters?.includeInactive) {
+        where.isActive = true;
+      }
+      
+      // Note: PersonalityQuiz doesn't have isPublished field
+      // If frontend sends isPublished filter, we ignore it
+      
+      const questions = await this.prisma.personalityQuiz.findMany({
+        where,
+        orderBy: { order: 'asc' },
+      });
+      
+      // Log for debugging
+      console.log(`Found ${questions.length} personality quiz questions (includeInactive: ${filters?.includeInactive || false})`);
+      
+      return questions;
+    } catch (error: any) {
+      console.error('Error fetching personality quiz questions:', error);
+      throw error;
     }
-    
-    return this.prisma.personalityQuiz.findMany({
-      where,
-      orderBy: { order: 'asc' },
-    });
   }
 
   async createPersonalityQuestion(data: any) {
