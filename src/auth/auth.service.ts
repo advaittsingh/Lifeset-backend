@@ -750,7 +750,7 @@ export class AuthService {
       const accessToken = this.jwtService.sign(payload);
       const refreshToken = this.jwtService.sign(payload, {
         secret: jwtRefreshSecret,
-        expiresIn: this.configService.get<string>('JWT_REFRESH_EXPIRES_IN', '7d'),
+        expiresIn: this.configService.get<string>('JWT_REFRESH_EXPIRES_IN', '90d'), // 90 days for long-term sessions
       });
 
       return { accessToken, refreshToken };
@@ -809,13 +809,16 @@ export class AuthService {
       // Generate new tokens
       const tokens = await this.generateTokens(user);
 
-      // Update session with new tokens
+      // Update session with new tokens - extend session to match refresh token expiration (default: 90 days)
+      const refreshExpiresIn = this.configService.get<string>('JWT_REFRESH_EXPIRES_IN', '90d');
+      const expirationMs = this.parseExpirationDuration(refreshExpiresIn);
+      
       await this.prisma.session.update({
         where: { id: session.id },
         data: {
           token: tokens.accessToken,
           refreshToken: tokens.refreshToken,
-          expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days
+          expiresAt: new Date(Date.now() + expirationMs),
         },
       });
 
@@ -890,10 +893,26 @@ export class AuthService {
     return { success: true, message: 'Logged out successfully' };
   }
 
+  /**
+   * Parse expiration duration string (e.g., '90d', '30d') and return milliseconds
+   */
+  private parseExpirationDuration(expiresIn: string): number {
+    // Parse duration string (e.g., '90d' = 90 days, '7d' = 7 days)
+    const daysMatch = expiresIn.match(/^(\d+)d$/);
+    if (daysMatch) {
+      return parseInt(daysMatch[1], 10) * 24 * 60 * 60 * 1000; // Convert days to milliseconds
+    }
+    // Fallback to 90 days if parsing fails
+    return 90 * 24 * 60 * 60 * 1000;
+  }
+
   async createSession(userId: string, token: string, refreshToken: string) {
     try {
-      const expiresAt = new Date();
-      expiresAt.setDate(expiresAt.getDate() + 7); // 7 days
+      // Set session expiration to match refresh token expiration (default: 90 days)
+      const refreshExpiresIn = this.configService.get<string>('JWT_REFRESH_EXPIRES_IN', '90d');
+      const expirationMs = this.parseExpirationDuration(refreshExpiresIn);
+      
+      const expiresAt = new Date(Date.now() + expirationMs);
 
       await this.prisma.session.create({
         data: {
