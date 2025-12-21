@@ -3,6 +3,7 @@ import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { McqService } from './mcq.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Public } from '../common/decorators/public.decorator';
 
 @ApiTags('MCQ')
 @Controller('mcq')
@@ -19,18 +20,24 @@ export class McqController {
 
   @Get('questions')
   @ApiOperation({ summary: 'Get MCQ questions' })
-  async getQuestions(@Query() filters: any) {
-    return this.mcqService.getQuestions(filters);
+  async getQuestions(
+    @Query() filters: any,
+    @CurrentUser() user?: any,
+  ) {
+    return this.mcqService.getQuestions(filters, user?.id);
   }
 
   @Get('questions/:id')
   @ApiOperation({ summary: 'Get question by ID' })
-  async getQuestionById(@Param('id') id: string) {
-    return this.mcqService.getQuestionById(id);
+  async getQuestionById(
+    @Param('id') id: string,
+    @CurrentUser() user?: any,
+  ) {
+    return this.mcqService.getQuestionById(id, user?.id);
   }
 
   @Post('questions/:id/answer')
-  @ApiOperation({ summary: 'Submit answer' })
+  @ApiOperation({ summary: 'Submit answer (returns isCorrect, correctAnswerIndex, solution)' })
   async submitAnswer(
     @CurrentUser() user: any,
     @Param('id') id: string,
@@ -65,6 +72,37 @@ export class McqController {
     @Query('categoryId') categoryId?: string,
   ) {
     return this.mcqService.getDailyDigestLinkedMcqs(articleId, categoryId);
+  }
+
+  @Post('questions/:id/report')
+  @ApiOperation({ summary: 'Report a MCQ question' })
+  async reportQuestion(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() data: { reason?: string; description?: string },
+  ) {
+    return this.mcqService.reportQuestion(user.id, id, data.reason, data.description);
+  }
+
+  @Public()
+  @Post('questions/:id/view')
+  @ApiOperation({ summary: 'Track view for a MCQ question' })
+  async trackView(
+    @Param('id') id: string,
+    @CurrentUser() user?: any,
+  ) {
+    return this.mcqService.trackView(id, user?.id);
+  }
+
+  @Public()
+  @Post('questions/:id/view-duration')
+  @ApiOperation({ summary: 'Track view duration for a MCQ question' })
+  async trackViewDuration(
+    @Param('id') id: string,
+    @Body() data: { duration: number },
+    @CurrentUser() user?: any,
+  ) {
+    return this.mcqService.trackViewDuration(id, data.duration, user?.id);
   }
 }
 

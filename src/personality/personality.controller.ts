@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, UseGuards, Query } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { PersonalityService } from './personality.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -31,8 +31,12 @@ export class PersonalityController {
 
   @Get('daily-digest-questions')
   @ApiOperation({ summary: 'Get 2 unanswered personality questions for daily digest' })
-  async getDailyDigestQuestions(@CurrentUser() user: any) {
-    return this.personalityService.getDailyDigestQuestions(user.id);
+  async getDailyDigestQuestions(
+    @CurrentUser() user: any,
+    @Query('excludeAnswered') excludeAnswered?: string,
+  ) {
+    const excludeAnsweredBool = excludeAnswered === 'true' || excludeAnswered === undefined;
+    return this.personalityService.getDailyDigestQuestions(user.id, excludeAnsweredBool);
   }
 }
 

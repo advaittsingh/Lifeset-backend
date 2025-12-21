@@ -78,23 +78,29 @@ model User {
   amsProfile     AmsProfile?
 
   // Activity tracking
-  sessions            Session[]
-  notifications       Notification[]
-  posts               Post[]
-  chatMessages        ChatMessage[]    @relation("SentMessages")
-  receivedMessages    ChatMessage[]    @relation("ReceivedMessages")
-  sentInvitations     ChatInvitation[] @relation("SentInvitations")
-  receivedInvitations ChatInvitation[] @relation("ReceivedInvitations")
-  applications        JobApplication[]
-  events              UserEvent[]
-  connections         Connection[]     @relation("Requester")
-  receivedConnections Connection[]     @relation("Receiver")
-  userBadges          UserBadge[]
-  referralCode        String?
-  referrerReferrals   Referral[]       @relation("Referrer")
-  referrals           Referral[]       @relation("Referred")
-  score               UserScore?
-  scoreHistory        ScoreHistory[]   @relation("ScoreHistoryUser")
+  sessions                        Session[]
+  notifications                   Notification[]
+  posts                           Post[]
+  chatMessages                    ChatMessage[]                    @relation("SentMessages")
+  receivedMessages                ChatMessage[]                    @relation("ReceivedMessages")
+  sentInvitations                 ChatInvitation[]                 @relation("SentInvitations")
+  receivedInvitations             ChatInvitation[]                 @relation("ReceivedInvitations")
+  applications                    JobApplication[]
+  events                          UserEvent[]
+  connections                     Connection[]                     @relation("Requester")
+  receivedConnections             Connection[]                     @relation("Receiver")
+  userBadges                      UserBadge[]
+  referralCode                    String?
+  referrerReferrals               Referral[]                       @relation("Referrer")
+  referrals                       Referral[]                       @relation("Referred")
+  score                           UserScore?
+  scoreHistory                    ScoreHistory[]                   @relation("ScoreHistoryUser")
+  dailyDigestPersonalityQuestions DailyDigestPersonalityQuestion[]
+  postReports                     PostReport[]
+  postReads                       PostRead[]
+  mcqReads                        McqRead[]
+  mcqReports                      McqReport[]
+  mcqAnswered                     McqAnswered[]
 
   @@index([email])
   @@index([mobile])
@@ -272,9 +278,14 @@ model Post {
   applications JobApplication[]
 
   // Post-specific data
-  jobPost  JobPost?
-  examPost ExamPost?
-  quizPost QuizPost?
+  jobPost               JobPost?
+  examPost              ExamPost?
+  quizPost              QuizPost?
+  dailyDigestGkArticles DailyDigestGkArticle[]
+  reports               PostReport[]
+  views                 PostView[]
+  reads                 PostRead[]
+  viewDurations         PostViewDuration[]
 
   @@index([userId])
   @@index([postType])
@@ -283,14 +294,24 @@ model Post {
 }
 
 model WallCategory {
-  id          String   @id @default(uuid())
-  name        String
-  description String?  @db.Text
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id               String   @id @default(uuid())
+  name             String
+  description      String?  @db.Text
+  isActive         Boolean  @default(true)
+  parentCategoryId String?
+  categoryFor      String?
+  postCount        Int      @default(0)
+  metadata         Json?    @default("{}")
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
-  posts Post[]
+  posts    Post[]
+  parent   WallCategory?  @relation("CategoryHierarchy", fields: [parentCategoryId], references: [id], onDelete: Cascade)
+  children WallCategory[] @relation("CategoryHierarchy")
+
+  @@index([parentCategoryId])
+  @@index([isActive])
+  @@index([categoryFor])
 }
 
 model JobPost {
@@ -898,14 +919,23 @@ model McqQuestion {
   options       Json // Array of options
   correctAnswer Int // Index of correct answer
   explanation   String?  @db.Text
+  solution      String?  @db.Text // Detailed solution/explanation
+  articleId     String? // Link to article (Post ID)
   difficulty    String // easy, medium, hard
   tags          String[]
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  category  McqCategory   @relation(fields: [categoryId], references: [id], onDelete: Cascade)
-  attempts  McqAttempt[]
-  bookmarks McqBookmark[]
+  category      McqCategory       @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  attempts      McqAttempt[]
+  bookmarks     McqBookmark[]
+  views         McqView[]
+  reads         McqRead[]
+  viewDurations McqViewDuration[]
+  reports       McqReport[]
+  McqAnswered   McqAnswered[]
+
+  @@index([articleId])
 }
 
 model McqAttempt {
@@ -944,6 +974,8 @@ model PersonalityQuiz {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  dailyDigestPersonalityQuestions DailyDigestPersonalityQuestion[]
 }
 
 model PersonalityResult {
@@ -959,4 +991,172 @@ model PersonalityResult {
 
   @@index([userId])
   @@index([createdAt])
+}
+
+// Track personality questions shown to users in daily digest
+model DailyDigestPersonalityQuestion {
+  id         String   @id @default(uuid())
+  userId     String
+  questionId String
+  shownAt    DateTime @default(now())
+
+  user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  question PersonalityQuiz @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, questionId, shownAt])
+  @@index([userId])
+  @@index([questionId])
+  @@index([shownAt])
+}
+
+// Track GK articles shown in daily digest
+model DailyDigestGkArticle {
+  id      String   @id @default(uuid())
+  postId  String
+  shownAt DateTime @default(now())
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, shownAt])
+  @@index([postId])
+  @@index([shownAt])
+}
+
+model PostReport {
+  id          String   @id @default(uuid())
+  userId      String
+  postId      String
+  reason      String?  @db.Text
+  description String?  @db.Text
+  status      String   @default("pending") // pending, reviewed, resolved, dismissed
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, postId])
+  @@index([postId])
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model PostView {
+  id       String   @id @default(uuid())
+  userId   String?
+  postId   String
+  viewedAt DateTime @default(now())
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+  @@index([userId])
+  @@index([viewedAt])
+}
+
+model PostRead {
+  id     String   @id @default(uuid())
+  userId String
+  postId String
+  readAt DateTime @default(now())
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, postId])
+  @@index([postId])
+  @@index([userId])
+  @@index([readAt])
+}
+
+model PostViewDuration {
+  id       String   @id @default(uuid())
+  userId   String?
+  postId   String
+  duration Int // Duration in seconds
+  viewedAt DateTime @default(now())
+
+  post Post @relation(fields: [postId], references: [id], onDelete: Cascade)
+
+  @@index([postId])
+  @@index([userId])
+  @@index([viewedAt])
+}
+
+model McqView {
+  id         String   @id @default(uuid())
+  userId     String?
+  questionId String
+  viewedAt   DateTime @default(now())
+
+  question McqQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@index([questionId])
+  @@index([userId])
+  @@index([viewedAt])
+}
+
+model McqRead {
+  id         String   @id @default(uuid())
+  userId     String
+  questionId String
+  readAt     DateTime @default(now())
+
+  question McqQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  user     User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, questionId])
+  @@index([questionId])
+  @@index([userId])
+  @@index([readAt])
+}
+
+model McqViewDuration {
+  id         String   @id @default(uuid())
+  userId     String?
+  questionId String
+  duration   Int // Duration in seconds
+  viewedAt   DateTime @default(now())
+
+  question McqQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@index([questionId])
+  @@index([userId])
+  @@index([viewedAt])
+}
+
+model McqReport {
+  id          String   @id @default(uuid())
+  userId      String
+  questionId  String
+  reason      String?  @db.Text
+  description String?  @db.Text
+  status      String   @default("pending") // pending, reviewed, resolved, dismissed
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  question McqQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  user     User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, questionId])
+  @@index([questionId])
+  @@index([userId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model McqAnswered {
+  id         String   @id @default(uuid())
+  userId     String
+  questionId String
+  answeredAt DateTime @default(now())
+
+  question McqQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  user     User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, questionId])
+  @@index([questionId])
+  @@index([userId])
+  @@index([answeredAt])
 }

@@ -234,51 +234,53 @@ Respond in JSON format:
     });
   }
 
-  async getDailyDigestQuestions(userId: string) {
-    // Get 2 unanswered personality questions for daily digest
-    // First, get questions user has already answered
-    const answeredResults = await this.prisma.personalityResult.findMany({
-      where: { userId },
-      select: { rawData: true },
-    });
+  async getDailyDigestQuestions(userId: string, excludeAnswered: boolean = true) {
+    try {
+      this.logger.log(`📝 Getting daily digest questions for user ${userId}, excludeAnswered: ${excludeAnswered}`);
 
-    // Extract answered question IDs from rawData if stored
-    const answeredQuestionIds = new Set<string>();
-    answeredResults.forEach(result => {
-      if (result.rawData && typeof result.rawData === 'object') {
-        const rawData = result.rawData as any;
-        if (rawData.answeredQuestions && Array.isArray(rawData.answeredQuestions)) {
-          rawData.answeredQuestions.forEach((id: string) => answeredQuestionIds.add(id));
-        }
+      // Get questions user has already answered (from PersonalityResult)
+      const answeredQuestionIds = new Set<string>();
+      if (excludeAnswered) {
+        const answeredResults = await this.prisma.personalityResult.findMany({
+          where: { userId },
+          select: { rawData: true },
+        });
+
+        answeredResults.forEach(result => {
+          if (result.rawData && typeof result.rawData === 'object') {
+            const rawData = result.rawData as any;
+            if (rawData.answeredQuestions && Array.isArray(rawData.answeredQuestions)) {
+              rawData.answeredQuestions.forEach((id: string) => answeredQuestionIds.add(id));
+            }
+          }
+        });
       }
-    });
 
-    // Get 2 unanswered questions
-    const questions = await this.prisma.personalityQuiz.findMany({
-      where: {
-        isActive: true,
-        ...(answeredQuestionIds.size > 0 && {
-          id: { notIn: Array.from(answeredQuestionIds) },
-        }),
-      },
-      orderBy: { order: 'asc' },
-      take: 2,
-      select: {
-        id: true,
-        question: true,
-        options: true,
-        imageUrl: true,
-        order: true,
-        isActive: true,
-        createdAt: true,
-        updatedAt: true,
-      },
-    });
+      // Get questions shown in daily digest in the last 7 days (to avoid repetition)
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      
+      const shownQuestions = await this.prisma.dailyDigestPersonalityQuestion.findMany({
+        where: {
+          userId,
+          shownAt: { gte: sevenDaysAgo },
+        },
+        select: { questionId: true },
+      });
 
-    // If we don't have enough unanswered questions, return any 2 active questions
-    if (questions.length < 2) {
-      const allQuestions = await this.prisma.personalityQuiz.findMany({
-        where: { isActive: true },
+      const shownQuestionIds = new Set(shownQuestions.map(sq => sq.questionId));
+
+      // Combine answered and shown question IDs
+      const excludedQuestionIds = Array.from(new Set([...answeredQuestionIds, ...shownQuestionIds]));
+
+      // Get 2 unanswered and unshown questions
+      let questions = await this.prisma.personalityQuiz.findMany({
+        where: {
+          isActive: true,
+          ...(excludedQuestionIds.length > 0 && {
+            id: { notIn: excludedQuestionIds },
+          }),
+        },
         orderBy: { order: 'asc' },
         take: 2,
         select: {
@@ -292,20 +294,82 @@ Respond in JSON format:
           updatedAt: true,
         },
       });
+
+      // If we don't have enough questions, get any 2 active questions (excluding only answered ones)
+      if (questions.length < 2 && excludeAnswered) {
+        const allQuestions = await this.prisma.personalityQuiz.findMany({
+          where: {
+            isActive: true,
+            ...(answeredQuestionIds.size > 0 && {
+              id: { notIn: Array.from(answeredQuestionIds) },
+            }),
+          },
+          orderBy: { order: 'asc' },
+          take: 2,
+          select: {
+            id: true,
+            question: true,
+            options: true,
+            imageUrl: true,
+            order: true,
+            isActive: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        });
+        questions = allQuestions;
+      }
+
+      // If still not enough, get any 2 active questions
+      if (questions.length < 2) {
+        const allQuestions = await this.prisma.personalityQuiz.findMany({
+          where: { isActive: true },
+          orderBy: { order: 'asc' },
+          take: 2,
+          select: {
+            id: true,
+            question: true,
+            options: true,
+            imageUrl: true,
+            order: true,
+            isActive: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        });
+        questions = allQuestions;
+      }
+
+      // Track the questions shown to this user
+      if (questions.length > 0) {
+        try {
+          await this.prisma.dailyDigestPersonalityQuestion.createMany({
+            data: questions.map(q => ({
+              userId,
+              questionId: q.id,
+              shownAt: new Date(),
+            })),
+            skipDuplicates: true,
+          });
+          this.logger.log(`✅ Tracked ${questions.length} personality questions shown to user ${userId}`);
+        } catch (trackError: any) {
+          // Log but don't fail if tracking fails
+          this.logger.warn(`⚠️ Failed to track shown questions for user ${userId}: ${trackError.message}`);
+        }
+      }
+
       // Ensure imageUrl is included
-      const questionsWithImages = allQuestions.map(q => ({
+      const questionsWithImages = questions.map(q => ({
         ...q,
         imageUrl: q.imageUrl || null,
       }));
+
+      this.logger.log(`✅ Returning ${questionsWithImages.length} personality questions for user ${userId}`);
       return { questions: questionsWithImages };
+    } catch (error: any) {
+      this.logger.error(`❌ Error getting daily digest questions for user ${userId}: ${error.message}`, error.stack);
+      // Return empty array on error instead of throwing
+      return { questions: [] };
     }
-
-    // Ensure imageUrl is included
-    const questionsWithImages = questions.map(q => ({
-      ...q,
-      imageUrl: q.imageUrl || null,
-    }));
-
-    return { questions: questionsWithImages };
   }
 }

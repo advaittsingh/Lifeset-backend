@@ -1,6 +1,9 @@
-import { Controller, Get, Query, Param } from '@nestjs/common';
-import { ApiTags, ApiOperation } from '@nestjs/swagger';
+import { Controller, Get, Post, Query, Param, Body, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { CmsService } from './cms.service';
+import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { CurrentUser } from '../common/decorators/current-user.decorator';
+import { Public } from '../common/decorators/public.decorator';
 
 @ApiTags('CMS')
 @Controller('cms')
@@ -33,14 +36,20 @@ export class CmsController {
 
   @Get('current-affairs')
   @ApiOperation({ summary: 'Get current affairs articles' })
-  async getCurrentAffairs(@Query() filters: any) {
-    return this.cmsService.getCurrentAffairs(filters);
+  async getCurrentAffairs(
+    @Query() filters: any,
+    @CurrentUser() user?: any,
+  ) {
+    return this.cmsService.getCurrentAffairs(filters, user?.id);
   }
 
   @Get('current-affairs/:id')
   @ApiOperation({ summary: 'Get current affair by ID' })
-  async getCurrentAffairById(@Param('id') id: string) {
-    return this.cmsService.getCurrentAffairById(id);
+  async getCurrentAffairById(
+    @Param('id') id: string,
+    @CurrentUser() user?: any,
+  ) {
+    return this.cmsService.getCurrentAffairById(id, user?.id);
   }
 
   @Get('general-knowledge')
@@ -63,8 +72,82 @@ export class CmsController {
 
   @Get('general-knowledge/daily-digest')
   @ApiOperation({ summary: 'Get 20 random general knowledge articles for daily digest' })
-  async getGeneralKnowledgeDailyDigest() {
-    return this.cmsService.getGeneralKnowledgeDailyDigest();
+  async getGeneralKnowledgeDailyDigest(@Query('excludePublished') excludePublished?: string) {
+    const excludePublishedBool = excludePublished === 'true' || excludePublished === undefined;
+    return this.cmsService.getGeneralKnowledgeDailyDigest(excludePublishedBool);
+  }
+
+  @Get('general-knowledge/categories/:categoryId/subcategories')
+  @ApiOperation({ summary: 'Get subcategories for a category' })
+  async getSubcategories(@Param('categoryId') categoryId: string) {
+    return this.cmsService.getSubcategories(categoryId);
+  }
+
+  @Get('general-knowledge/subcategories/:subCategoryId/sections')
+  @ApiOperation({ summary: 'Get sections for a subcategory' })
+  async getSections(@Param('subCategoryId') subCategoryId: string) {
+    return this.cmsService.getSections(subCategoryId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('general-knowledge/:id/bookmark')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Bookmark or unbookmark a general knowledge article' })
+  async bookmarkArticle(@CurrentUser() user: any, @Param('id') id: string) {
+    return this.cmsService.bookmarkArticle(user.id, id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('general-knowledge/:id/report')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Report a general knowledge article' })
+  async reportArticle(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() data: { reason?: string; description?: string },
+  ) {
+    return this.cmsService.reportArticle(user.id, id, data.reason, data.description);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('current-affairs/:id/bookmark')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Bookmark or unbookmark a current affair article' })
+  async bookmarkCurrentAffair(@CurrentUser() user: any, @Param('id') id: string) {
+    return this.cmsService.bookmarkCurrentAffair(user.id, id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('current-affairs/:id/report')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Report a current affair article' })
+  async reportCurrentAffair(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() data: { reason?: string; description?: string },
+  ) {
+    return this.cmsService.reportCurrentAffair(user.id, id, data.reason, data.description);
+  }
+
+  @Public()
+  @Post('current-affairs/:id/view')
+  @ApiOperation({ summary: 'Track view for a current affair article' })
+  async trackView(
+    @Param('id') id: string,
+    @CurrentUser() user?: any,
+  ) {
+    return this.cmsService.trackView(id, user?.id);
+  }
+
+  @Public()
+  @Post('current-affairs/:id/view-duration')
+  @ApiOperation({ summary: 'Track view duration for a current affair article' })
+  async trackViewDuration(
+    @Param('id') id: string,
+    @Body() data: { duration: number },
+    @CurrentUser() user?: any,
+  ) {
+    return this.cmsService.trackViewDuration(id, data.duration, user?.id);
   }
 }
 
