@@ -14,8 +14,14 @@ export class FeedsController {
 
   @Get()
   @ApiOperation({ summary: 'Get feeds list' })
-  async getFeeds(@Query() filters: any) {
-    return this.feedsService.getFeeds(filters);
+  async getFeeds(@Query() filters: any, @CurrentUser() user?: any) {
+    return this.feedsService.getFeeds(filters, user?.id);
+  }
+
+  @Get('bookmarks')
+  @ApiOperation({ summary: 'Get bookmarked posts/feeds for current user' })
+  async getBookmarkedFeeds(@CurrentUser() user: any, @Query() filters: any) {
+    return this.feedsService.getBookmarkedFeeds(user.id, filters);
   }
 
   @Get(':id')

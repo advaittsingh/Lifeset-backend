@@ -415,5 +415,112 @@ export class FeedsService {
 
     return commentRecord;
   }
+
+  async getBookmarkedFeeds(userId: string, filters: {
+    type?: FeedType;
+    search?: string;
+    category?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const page = parseInt(String(filters.page || 1), 10);
+    const limit = parseInt(String(filters.limit || 20), 10);
+    const skip = (page - 1) * limit;
+
+    // First, get all bookmarked post IDs for this user
+    const bookmarks = await this.prisma.postBookmark.findMany({
+      where: { userId },
+      select: { postId: true },
+    });
+
+    const bookmarkedPostIds = bookmarks.map(b => b.postId);
+
+    if (bookmarkedPostIds.length === 0) {
+      return {
+        data: [],
+        pagination: {
+          page,
+          limit,
+          total: 0,
+          totalPages: 0,
+        },
+      };
+    }
+
+    // Build where clause for posts
+    const where: any = {
+      id: { in: bookmarkedPostIds }, // Only posts that are bookmarked by this user
+      isActive: true,
+    };
+
+    if (filters.type) {
+      where.postType = filters.type;
+    }
+
+    if (filters.search) {
+      where.OR = [
+        { title: { contains: filters.search, mode: 'insensitive' } },
+        { description: { contains: filters.search, mode: 'insensitive' } },
+      ];
+    }
+
+    if (filters.category) {
+      where.categoryId = filters.category;
+    }
+
+    const [feeds, total] = await Promise.all([
+      this.prisma.post.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: {
+          createdAt: 'desc',
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              email: true,
+              mobile: true,
+              profileImage: true,
+            },
+          },
+          category: true,
+          _count: {
+            select: {
+              likes: true,
+              comments: true,
+              bookmarks: true,
+            },
+          },
+        },
+      }),
+      this.prisma.post.count({ where }),
+    ]);
+
+    // Extract full content from metadata for articles
+    const feedsWithContent = feeds.map(feed => {
+      const metadata = feed.metadata as any || {};
+      return {
+        ...feed,
+        content: metadata.fullArticle || metadata.content || feed.description,
+        fullArticle: metadata.fullArticle || null,
+        quickViewContent: metadata.quickViewContent || null,
+        headline: metadata.headline || null,
+        articleDate: metadata.articleDate || null,
+        isBookmarked: true, // All posts in this list are bookmarked
+      };
+    });
+
+    return {
+      data: feedsWithContent,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
 }
 

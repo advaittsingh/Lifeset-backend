@@ -863,5 +863,132 @@ export class CmsService {
       throw new BadRequestException(`Failed to track view duration: ${error.message}`);
     }
   }
+
+  async getBookmarkedArticles(userId: string, filters?: {
+    type?: 'GENERAL_KNOWLEDGE' | 'CURRENT_AFFAIRS' | 'ALL';
+    search?: string;
+    category?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    try {
+      const page = parseInt(String(filters?.page || 1), 10);
+      const limit = parseInt(String(filters?.limit || 20), 10);
+      const skip = (page - 1) * limit;
+
+      // Get all bookmarked post IDs for this user
+      const bookmarks = await this.prisma.postBookmark.findMany({
+        where: { userId },
+        select: { postId: true },
+      });
+
+      const bookmarkedPostIds = bookmarks.map(b => b.postId);
+
+      if (bookmarkedPostIds.length === 0) {
+        return {
+          data: [],
+          pagination: {
+            page,
+            limit,
+            total: 0,
+            totalPages: 0,
+          },
+        };
+      }
+
+      // Build where clause
+      const where: any = {
+        id: { in: bookmarkedPostIds },
+        isActive: true,
+      };
+
+      // Filter by type
+      const postType = filters?.type || 'ALL';
+      if (postType === 'GENERAL_KNOWLEDGE') {
+        where.postType = 'COLLEGE_FEED'; // General Knowledge uses COLLEGE_FEED type
+      } else if (postType === 'CURRENT_AFFAIRS') {
+        where.postType = 'CURRENT_AFFAIRS';
+      } else {
+        // ALL - include both types
+        where.postType = { in: ['COLLEGE_FEED', 'CURRENT_AFFAIRS'] };
+      }
+
+      if (filters?.search) {
+        where.OR = [
+          { title: { contains: filters.search, mode: 'insensitive' } },
+          { description: { contains: filters.search, mode: 'insensitive' } },
+        ];
+      }
+
+      if (filters?.category) {
+        where.categoryId = filters.category;
+      }
+
+      const [posts, total] = await Promise.all([
+        this.prisma.post.findMany({
+          where,
+          include: { user: true, category: true },
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+        }),
+        this.prisma.post.count({ where }),
+      ]);
+
+      // Add searchText and isBookmarked flag
+      const postsWithMetadata = posts.map(post => {
+        const metadata = (post.metadata as any) || {};
+        const searchText = [
+          post.title,
+          post.description,
+          metadata.fullArticle || metadata.content || '',
+          metadata.headline || '',
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+          .replace(/<[^>]*>/g, '')
+          .replace(/\s+/g, ' ')
+          .trim();
+
+        return {
+          ...post,
+          searchText,
+          isBookmarked: true, // All posts in this list are bookmarked
+        };
+      });
+
+      return {
+        data: postsWithMetadata,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
+      };
+    } catch (error: any) {
+      this.logger.error(`Error getting bookmarked articles for user ${userId}: ${error.message}`, error.stack);
+      throw new BadRequestException(`Failed to get bookmarked articles: ${error.message}`);
+    }
+  }
+
+  async getBookmarkedGeneralKnowledge(userId: string, filters?: {
+    search?: string;
+    category?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    return this.getBookmarkedArticles(userId, { ...filters, type: 'GENERAL_KNOWLEDGE' });
+  }
+
+  async getBookmarkedCurrentAffairs(userId: string, filters?: {
+    search?: string;
+    category?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    return this.getBookmarkedArticles(userId, { ...filters, type: 'CURRENT_AFFAIRS' });
+  }
 }
 

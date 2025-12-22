@@ -96,6 +96,30 @@ export class CmsController {
   }
 
   @UseGuards(JwtAuthGuard)
+  @Get('bookmarks')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get all bookmarked articles (General Knowledge and Current Affairs)' })
+  async getBookmarkedArticles(@CurrentUser() user: any, @Query() filters: any) {
+    return this.cmsService.getBookmarkedArticles(user.id, filters);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('general-knowledge/bookmarks')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get bookmarked general knowledge articles' })
+  async getBookmarkedGeneralKnowledge(@CurrentUser() user: any, @Query() filters: any) {
+    return this.cmsService.getBookmarkedGeneralKnowledge(user.id, filters);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('current-affairs/bookmarks')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get bookmarked current affairs articles' })
+  async getBookmarkedCurrentAffairs(@CurrentUser() user: any, @Query() filters: any) {
+    return this.cmsService.getBookmarkedCurrentAffairs(user.id, filters);
+  }
+
+  @UseGuards(JwtAuthGuard)
   @Post('general-knowledge/:id/bookmark')
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Bookmark or unbookmark a general knowledge article' })
