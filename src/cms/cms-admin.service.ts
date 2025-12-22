@@ -977,24 +977,155 @@ export class CmsAdminService {
   }
 
   // ========== Chapters ==========
-  // Note: Chapter model has been removed from schema - these methods are disabled
   async getChapters(filters?: { subCategoryId?: string; isActive?: boolean }) {
-    throw new BadRequestException('Chapter functionality is not available in the current schema');
+    try {
+      const where: any = {};
+      if (filters?.subCategoryId) where.subCategoryId = filters.subCategoryId;
+      if (filters?.isActive !== undefined) {
+        where.isActive = filters.isActive;
+      } else {
+        where.isActive = true; // Default: only show active chapters
+      }
+
+      const chapters = await this.prisma.chapter.findMany({
+        where,
+        include: { subCategory: true },
+        orderBy: [
+          { order: 'asc' },
+          { name: 'asc' },
+        ],
+      });
+
+      return chapters;
+    } catch (error: any) {
+      this.logger.error(`Error fetching chapters: ${error.message}`, error.stack);
+      throw new BadRequestException(`Failed to fetch chapters: ${error.message}`);
+    }
   }
 
   async getChapterById(id: string) {
-    throw new BadRequestException('Chapter functionality is not available in the current schema');
+    try {
+      const chapter = await this.prisma.chapter.findUnique({
+        where: { id },
+        include: { subCategory: true },
+      });
+
+      if (!chapter) {
+        throw new NotFoundException(`Chapter with ID ${id} not found`);
+      }
+
+      return chapter;
+    } catch (error: any) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      this.logger.error(`Error fetching chapter ${id}: ${error.message}`, error.stack);
+      throw new BadRequestException(`Failed to fetch chapter: ${error.message}`);
+    }
   }
 
   async createChapter(data: any) {
-    throw new BadRequestException('Chapter functionality is not available in the current schema');
+    try {
+      // Verify subcategory exists
+      const subCategory = await this.prisma.wallCategory.findUnique({
+        where: { id: data.subCategoryId },
+      });
+
+      if (!subCategory) {
+        throw new NotFoundException(`Subcategory with ID ${data.subCategoryId} not found`);
+      }
+
+      const chapter = await this.prisma.chapter.create({
+        data: {
+          name: data.name,
+          description: data.description,
+          subCategoryId: data.subCategoryId,
+          order: data.order ?? 0,
+          isActive: data.isActive !== undefined ? data.isActive : true,
+          metadata: data.metadata || {},
+        },
+        include: { subCategory: true },
+      });
+
+      this.logger.log(`Chapter created: ${chapter.id} - ${chapter.name}`);
+      return chapter;
+    } catch (error: any) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      this.logger.error(`Error creating chapter: ${error.message}`, error.stack);
+      throw new BadRequestException(`Failed to create chapter: ${error.message}`);
+    }
   }
 
   async updateChapter(id: string, data: any) {
-    throw new BadRequestException('Chapter functionality is not available in the current schema');
+    try {
+      // Verify chapter exists
+      const existingChapter = await this.prisma.chapter.findUnique({
+        where: { id },
+      });
+
+      if (!existingChapter) {
+        throw new NotFoundException(`Chapter with ID ${id} not found`);
+      }
+
+      // If subCategoryId is being updated, verify it exists
+      if (data.subCategoryId && data.subCategoryId !== existingChapter.subCategoryId) {
+        const subCategory = await this.prisma.wallCategory.findUnique({
+          where: { id: data.subCategoryId },
+        });
+
+        if (!subCategory) {
+          throw new NotFoundException(`Subcategory with ID ${data.subCategoryId} not found`);
+        }
+      }
+
+      const chapter = await this.prisma.chapter.update({
+        where: { id },
+        data: {
+          name: data.name,
+          description: data.description,
+          subCategoryId: data.subCategoryId,
+          order: data.order,
+          isActive: data.isActive,
+          metadata: data.metadata,
+        },
+        include: { subCategory: true },
+      });
+
+      this.logger.log(`Chapter updated: ${chapter.id} - ${chapter.name}`);
+      return chapter;
+    } catch (error: any) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      this.logger.error(`Error updating chapter ${id}: ${error.message}`, error.stack);
+      throw new BadRequestException(`Failed to update chapter: ${error.message}`);
+    }
   }
 
   async deleteChapter(id: string) {
-    throw new BadRequestException('Chapter functionality is not available in the current schema');
+    try {
+      const chapter = await this.prisma.chapter.findUnique({
+        where: { id },
+      });
+
+      if (!chapter) {
+        throw new NotFoundException(`Chapter with ID ${id} not found`);
+      }
+
+      await this.prisma.chapter.delete({
+        where: { id },
+      });
+
+      this.logger.log(`Chapter deleted: ${id} - ${chapter.name}`);
+      return { success: true, message: 'Chapter deleted successfully' };
+    } catch (error: any) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      this.logger.error(`Error deleting chapter ${id}: ${error.message}`, error.stack);
+      throw new BadRequestException(`Failed to delete chapter: ${error.message}`);
+    }
   }
 }

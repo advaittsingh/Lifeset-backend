@@ -90,7 +90,7 @@ export class CmsController {
   }
 
   @Get('general-knowledge/subcategories/:subCategoryId/sections')
-  @ApiOperation({ summary: 'Get sections for a subcategory' })
+  @ApiOperation({ summary: 'Get chapters (sections) for a subcategory' })
   async getSections(@Param('subCategoryId') subCategoryId: string) {
     return this.cmsService.getSections(subCategoryId);
   }

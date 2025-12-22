@@ -308,10 +308,29 @@ model WallCategory {
   posts    Post[]
   parent   WallCategory?  @relation("CategoryHierarchy", fields: [parentCategoryId], references: [id], onDelete: Cascade)
   children WallCategory[] @relation("CategoryHierarchy")
+  chapters Chapter[]
 
   @@index([parentCategoryId])
   @@index([isActive])
   @@index([categoryFor])
+}
+
+model Chapter {
+  id            String   @id @default(uuid())
+  name          String
+  description   String?  @db.Text
+  subCategoryId String
+  isActive      Boolean  @default(true)
+  order         Int      @default(0)
+  metadata      Json?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  subCategory WallCategory @relation(fields: [subCategoryId], references: [id], onDelete: Cascade)
+
+  @@index([subCategoryId])
+  @@index([isActive])
+  @@index([order])
 }
 
 model JobPost {

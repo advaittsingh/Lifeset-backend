@@ -491,25 +491,31 @@ export class CmsService {
         throw new NotFoundException(`Subcategory with ID ${subCategoryId} not found`);
       }
 
-      // Get sections (categories where parentCategoryId = subCategoryId)
-      const sections = await this.prisma.wallCategory.findMany({
+      // Get chapters for this subcategory (chapters are the "sections" in the hierarchy)
+      const chapters = await this.prisma.chapter.findMany({
         where: {
-          parentCategoryId: subCategoryId,
+          subCategoryId: subCategoryId,
           isActive: true,
         },
-        orderBy: { name: 'asc' },
+        orderBy: [
+          { order: 'asc' },
+          { name: 'asc' },
+        ],
       });
 
       return {
-        data: sections,
-        count: sections.length,
+        data: chapters,
+        count: chapters.length,
       };
     } catch (error: any) {
       if (error instanceof NotFoundException) {
         throw error;
       }
-      this.logger.error(`Error getting sections for subcategory ${subCategoryId}: ${error.message}`, error.stack);
-      throw new BadRequestException(`Failed to get sections: ${error.message}`);
+      this.logger.error(`Error getting chapters for subcategory ${subCategoryId}: ${error.message}`, error.stack);
+      if (error.code === 'P1001' || error.message?.includes('connect') || error.message?.includes('DATABASE_URL')) {
+        throw new BadRequestException('Database connection error. Please check DATABASE_URL environment variable.');
+      }
+      throw new BadRequestException(`Failed to get chapters: ${error.message}`);
     }
   }
 
