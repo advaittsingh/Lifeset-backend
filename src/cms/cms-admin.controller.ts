@@ -90,6 +90,12 @@ export class CmsAdminController {
     return this.cmsAdminService.getMcqQuestions(filters);
   }
 
+  @Get('mcq/questions/:id')
+  @ApiOperation({ summary: 'Get MCQ question by ID (Admin)' })
+  async getMcqQuestionById(@Param('id') id: string) {
+    return this.cmsAdminService.getMcqQuestionById(id);
+  }
+
   @Post('mcq/questions')
   @ApiOperation({ summary: 'Create MCQ question (Admin)' })
   async createMcqQuestion(@Body() data: CreateMcqDto) {

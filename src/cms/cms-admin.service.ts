@@ -407,13 +407,29 @@ export class CmsAdminService {
       // Note: category relation is optional, so some questions might have null categories
       const validQuestions = questions.filter(q => q.category !== null);
 
-      // Count total valid questions (not just on this page)
-      const totalValid = await this.prisma.mcqQuestion.count({
-        where: {
-          ...where,
-          category: { isNot: null }, // Only count questions with valid categories
-        },
-      });
+      // Count total valid questions by getting all valid categoryIds first
+      // Then count questions that have those categoryIds
+      let totalValid = total;
+      try {
+        // Get all valid WallCategory IDs
+        const validCategoryIds = await this.prisma.wallCategory.findMany({
+          where: { isActive: true },
+          select: { id: true },
+        });
+        const validCategoryIdSet = new Set(validCategoryIds.map(c => c.id));
+
+        // Count questions with valid categoryIds
+        totalValid = await this.prisma.mcqQuestion.count({
+          where: {
+            ...where,
+            categoryId: { in: Array.from(validCategoryIdSet) },
+          },
+        });
+      } catch (countError: any) {
+        this.logger.warn(`Error counting valid questions, using total count: ${countError.message}`);
+        // Fallback to total count if counting fails
+        totalValid = total;
+      }
 
       this.logger.log(`Found ${validQuestions.length} valid MCQ questions on page ${page} (${questions.length - validQuestions.length} with invalid categories)`);
       this.logger.log(`Total valid questions in database: ${totalValid}`);
@@ -433,6 +449,34 @@ export class CmsAdminService {
     }
   }
 
+  async getMcqQuestionById(id: string) {
+    try {
+      const question = await this.prisma.mcqQuestion.findUnique({
+        where: { id },
+        include: {
+          category: true, // Include WallCategory relation
+        },
+      });
+
+      if (!question) {
+        throw new NotFoundException(`MCQ question with ID ${id} not found`);
+      }
+
+      // Check if category is null (invalid categoryId)
+      if (!question.category) {
+        this.logger.warn(`MCQ question ${id} has invalid categoryId: ${question.categoryId}`);
+      }
+
+      return question;
+    } catch (error: any) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      this.logger.error(`Error fetching MCQ question ${id}: ${error.message}`, error.stack);
+      throw new BadRequestException(`Failed to fetch MCQ question: ${error.message}`);
+    }
+  }
+
   async createMcqQuestion(data: any) {
     // Validate categoryId is provided (required field)
     if (!data.categoryId) {
@@ -440,6 +484,13 @@ export class CmsAdminService {
     }
 
     // Create MCQ with all fields as columns
+    this.logger.log(`Creating MCQ question with data: ${JSON.stringify({
+      question: data.question?.substring(0, 50),
+      categoryId: data.categoryId,
+      questionImage: data.questionImage ? 'present' : 'missing',
+      explanationImage: data.explanationImage ? 'present' : 'missing',
+    })}`);
+
     return this.prisma.mcqQuestion.create({
       data: {
         question: data.question,
@@ -447,25 +498,41 @@ export class CmsAdminService {
         correctAnswer: data.correctAnswer,
         categoryId: data.categoryId,
         explanation: data.explanation,
+        solution: data.solution,
         difficulty: data.difficulty || 'medium',
         tags: data.tags || [],
-        // articleId and metadata fields removed from schema
-        // Store in metadata if needed
-        // articleId: data.articleId,
-        // mcqCategory: data.mcqCategory,
-        // subCategory: data.subCategory,
-        // subCategoryId: data.subCategoryId,
-        // chapterId: data.chapterId,
-        // section: data.section,
-        // country: data.country,
-        // questionImage: data.questionImage,
-        // explanationImage: data.explanationImage,
+        articleId: data.articleId || null,
+        questionImage: data.questionImage || null,
+        explanationImage: data.explanationImage || null,
       },
     });
   }
 
   async updateMcqQuestion(id: string, data: any) {
-    return this.prisma.mcqQuestion.update({ where: { id }, data });
+    this.logger.log(`Updating MCQ question ${id} with data: ${JSON.stringify({
+      questionImage: data.questionImage ? 'present' : 'missing',
+      explanationImage: data.explanationImage ? 'present' : 'missing',
+    })}`);
+
+    // Build update data object, only including fields that are provided
+    const updateData: any = {};
+    
+    if (data.question !== undefined) updateData.question = data.question;
+    if (data.options !== undefined) updateData.options = data.options;
+    if (data.correctAnswer !== undefined) updateData.correctAnswer = data.correctAnswer;
+    if (data.categoryId !== undefined) updateData.categoryId = data.categoryId;
+    if (data.explanation !== undefined) updateData.explanation = data.explanation;
+    if (data.solution !== undefined) updateData.solution = data.solution;
+    if (data.difficulty !== undefined) updateData.difficulty = data.difficulty;
+    if (data.tags !== undefined) updateData.tags = data.tags;
+    if (data.articleId !== undefined) updateData.articleId = data.articleId;
+    if (data.questionImage !== undefined) updateData.questionImage = data.questionImage;
+    if (data.explanationImage !== undefined) updateData.explanationImage = data.explanationImage;
+
+    return this.prisma.mcqQuestion.update({ 
+      where: { id }, 
+      data: updateData 
+    });
   }
 
   async deleteMcqQuestion(id: string) {

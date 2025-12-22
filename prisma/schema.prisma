@@ -924,18 +924,20 @@ model AdCampaign {
 // McqCategory model removed - MCQ questions now use WallCategory
 
 model McqQuestion {
-  id            String   @id @default(uuid())
-  categoryId    String
-  question      String   @db.Text
-  options       Json // Array of options
-  correctAnswer Int // Index of correct answer
-  explanation   String?  @db.Text
-  solution      String?  @db.Text // Detailed solution/explanation
-  articleId     String? // Link to article (Post ID)
-  difficulty    String // easy, medium, hard
-  tags          String[]
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id               String   @id @default(uuid())
+  categoryId       String
+  question         String   @db.Text
+  options          Json // Array of options
+  correctAnswer    Int // Index of correct answer
+  explanation      String?  @db.Text
+  solution         String?  @db.Text // Detailed solution/explanation
+  articleId        String? // Link to article (Post ID)
+  difficulty       String // easy, medium, hard
+  tags             String[]
+  questionImage    String?  @db.Text // Image URL for the question
+  explanationImage String?  @db.Text // Image URL for the explanation
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   category      WallCategory?     @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   attempts      McqAttempt[]
