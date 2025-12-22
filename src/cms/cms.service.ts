@@ -446,7 +446,7 @@ export class CmsService {
 
   async getSubcategories(categoryId: string) {
     try {
-      // Verify category exists
+      // Verify category exists and is a top-level category (parentCategoryId should be null)
       const category = await this.prisma.wallCategory.findUnique({
         where: { id: categoryId },
       });
@@ -455,14 +455,23 @@ export class CmsService {
         throw new NotFoundException(`Category with ID ${categoryId} not found`);
       }
 
+      // Verify it's a top-level category (optional validation - can be removed if you want to allow nested subcategories)
+      if (category.parentCategoryId !== null) {
+        this.logger.warn(`Category ${categoryId} is not a top-level category (has parent: ${category.parentCategoryId})`);
+        // Still allow it, but log a warning
+      }
+
       // Get subcategories (categories where parentCategoryId = categoryId)
+      // This ensures only subcategories of the specified category are returned
       const subcategories = await this.prisma.wallCategory.findMany({
         where: {
-          parentCategoryId: categoryId,
+          parentCategoryId: categoryId, // Only subcategories that belong to this specific category
           isActive: true,
         },
         orderBy: { name: 'asc' },
       });
+
+      this.logger.log(`Found ${subcategories.length} subcategories for category ${categoryId} (${category.name})`);
 
       return {
         data: subcategories,
@@ -491,10 +500,17 @@ export class CmsService {
         throw new NotFoundException(`Subcategory with ID ${subCategoryId} not found`);
       }
 
-      // Get chapters for this subcategory (chapters are the "sections" in the hierarchy)
+      // Verify it's actually a subcategory (has a parentCategoryId)
+      if (subCategory.parentCategoryId === null) {
+        this.logger.warn(`Category ${subCategoryId} is a top-level category, not a subcategory`);
+        // Still allow it, but log a warning
+      }
+
+      // Get chapters for this specific subcategory only
+      // This ensures only chapters that belong to the selected subcategory are returned
       const chapters = await this.prisma.chapter.findMany({
         where: {
-          subCategoryId: subCategoryId,
+          subCategoryId: subCategoryId, // Only chapters that belong to this specific subcategory
           isActive: true,
         },
         orderBy: [
@@ -502,6 +518,8 @@ export class CmsService {
           { name: 'asc' },
         ],
       });
+
+      this.logger.log(`Found ${chapters.length} chapters for subcategory ${subCategoryId} (${subCategory.name})`);
 
       return {
         data: chapters,
