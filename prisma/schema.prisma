@@ -921,16 +921,7 @@ model AdCampaign {
   @@index([createdAt])
 }
 
-model McqCategory {
-  id          String   @id @default(uuid())
-  name        String
-  description String?  @db.Text
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  questions McqQuestion[]
-}
+// McqCategory model removed - MCQ questions now use WallCategory
 
 model McqQuestion {
   id            String   @id @default(uuid())
@@ -954,8 +945,6 @@ model McqQuestion {
   viewDurations McqViewDuration[]
   reports       McqReport[]
   McqAnswered   McqAnswered[]
-  McqCategory   McqCategory?      @relation(fields: [mcqCategoryId], references: [id])
-  mcqCategoryId String?
 
   @@index([articleId])
   @@index([categoryId])
