@@ -797,19 +797,20 @@ export class CmsService {
     }
   }
 
-  async trackView(articleId: string, userId?: string) {
+  async trackView(articleId: string, userId?: string, postType: 'CURRENT_AFFAIRS' | 'COLLEGE_FEED' = 'CURRENT_AFFAIRS') {
     try {
       // Verify article exists
       const article = await this.prisma.post.findFirst({
         where: {
           id: articleId,
-          postType: 'CURRENT_AFFAIRS',
+          postType,
           isActive: true,
         },
       });
 
       if (!article) {
-        throw new NotFoundException('Current affair article not found');
+        const articleType = postType === 'CURRENT_AFFAIRS' ? 'Current affair' : 'General knowledge article';
+        throw new NotFoundException(`${articleType} not found`);
       }
 
       // Create view record
@@ -820,30 +821,32 @@ export class CmsService {
         },
       });
 
-      this.logger.log(`View tracked for current affair ${articleId} by user ${userId || 'anonymous'}`);
+      const articleType = postType === 'CURRENT_AFFAIRS' ? 'current affair' : 'general knowledge article';
+      this.logger.log(`View tracked for ${articleType} ${articleId} by user ${userId || 'anonymous'}`);
       return { success: true, message: 'View tracked successfully' };
     } catch (error: any) {
       if (error instanceof NotFoundException) {
         throw error;
       }
-      this.logger.error(`Error tracking view for current affair ${articleId}: ${error.message}`, error.stack);
+      this.logger.error(`Error tracking view for article ${articleId}: ${error.message}`, error.stack);
       throw new BadRequestException(`Failed to track view: ${error.message}`);
     }
   }
 
-  async trackViewDuration(articleId: string, duration: number, userId?: string) {
+  async trackViewDuration(articleId: string, duration: number, userId?: string, postType: 'CURRENT_AFFAIRS' | 'COLLEGE_FEED' = 'CURRENT_AFFAIRS') {
     try {
       // Verify article exists
       const article = await this.prisma.post.findFirst({
         where: {
           id: articleId,
-          postType: 'CURRENT_AFFAIRS',
+          postType,
           isActive: true,
         },
       });
 
       if (!article) {
-        throw new NotFoundException('Current affair article not found');
+        const articleType = postType === 'CURRENT_AFFAIRS' ? 'Current affair article' : 'General knowledge article';
+        throw new NotFoundException(`${articleType} not found`);
       }
 
       // Validate duration (should be positive)
@@ -883,13 +886,14 @@ export class CmsService {
         }
       }
 
-      this.logger.log(`View duration tracked for current affair ${articleId}: ${duration}s by user ${userId || 'anonymous'}`);
+      const articleType = postType === 'CURRENT_AFFAIRS' ? 'current affair' : 'general knowledge article';
+      this.logger.log(`View duration tracked for ${articleType} ${articleId}: ${duration}s by user ${userId || 'anonymous'}`);
       return { success: true, message: 'View duration tracked successfully' };
     } catch (error: any) {
       if (error instanceof NotFoundException || error instanceof BadRequestException) {
         throw error;
       }
-      this.logger.error(`Error tracking view duration for current affair ${articleId}: ${error.message}`, error.stack);
+      this.logger.error(`Error tracking view duration for article ${articleId}: ${error.message}`, error.stack);
       throw new BadRequestException(`Failed to track view duration: ${error.message}`);
     }
   }

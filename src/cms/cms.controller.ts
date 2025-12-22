@@ -166,7 +166,7 @@ export class CmsController {
     @Param('id') id: string,
     @CurrentUser() user?: any,
   ) {
-    return this.cmsService.trackView(id, user?.id);
+    return this.cmsService.trackView(id, user?.id, 'CURRENT_AFFAIRS');
   }
 
   @Public()
@@ -177,7 +177,28 @@ export class CmsController {
     @Body() data: { duration: number },
     @CurrentUser() user?: any,
   ) {
-    return this.cmsService.trackViewDuration(id, data.duration, user?.id);
+    return this.cmsService.trackViewDuration(id, data.duration, user?.id, 'CURRENT_AFFAIRS');
+  }
+
+  @Public()
+  @Post('general-knowledge/:id/view')
+  @ApiOperation({ summary: 'Track view for a general knowledge article' })
+  async trackViewGeneralKnowledge(
+    @Param('id') id: string,
+    @CurrentUser() user?: any,
+  ) {
+    return this.cmsService.trackView(id, user?.id, 'COLLEGE_FEED');
+  }
+
+  @Public()
+  @Post('general-knowledge/:id/view-duration')
+  @ApiOperation({ summary: 'Track view duration for a general knowledge article' })
+  async trackViewDurationGeneralKnowledge(
+    @Param('id') id: string,
+    @Body() data: { duration: number },
+    @CurrentUser() user?: any,
+  ) {
+    return this.cmsService.trackViewDuration(id, data.duration, user?.id, 'COLLEGE_FEED');
   }
 }
 
