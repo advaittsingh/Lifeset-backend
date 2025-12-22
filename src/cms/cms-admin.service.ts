@@ -859,10 +859,26 @@ export class CmsAdminService {
   // ========== Wall Categories ==========
   async getWallCategories(filters?: { parentId?: string; categoryFor?: string; onlyParents?: boolean }) {
     try {
+      const where: any = {
+        isActive: true,
+      };
+
+      // Filter by parentId if provided (for getting subcategories)
+      if (filters?.parentId) {
+        where.parentCategoryId = filters.parentId;
+      } else if (filters?.onlyParents !== false) {
+        // Default: only return parent categories (where parentCategoryId is null)
+        where.parentCategoryId = null;
+      }
+      // If onlyParents is explicitly false and no parentId, return all categories
+
+      // Filter by categoryFor if provided
+      if (filters?.categoryFor) {
+        where.categoryFor = filters.categoryFor;
+      }
+
       const categories = await this.prisma.wallCategory.findMany({
-        where: {
-          isActive: true,
-        },
+        where,
         orderBy: { name: 'asc' },
       });
 
@@ -878,6 +894,7 @@ export class CmsAdminService {
             name: cat.name,
             description: cat.description,
             isActive: cat.isActive,
+            parentCategoryId: cat.parentCategoryId, // Include parentCategoryId in response
             postCount,
             createdAt: cat.createdAt,
             updatedAt: cat.updatedAt,
@@ -885,9 +902,11 @@ export class CmsAdminService {
         })
       );
 
+      this.logger.log(`Found ${categoriesWithCounts.length} categories (parentId: ${filters?.parentId || 'none'}, onlyParents: ${filters?.onlyParents !== false})`);
+
       return categoriesWithCounts;
     } catch (error: any) {
-      console.error('Error fetching wall categories:', error);
+      this.logger.error('Error fetching wall categories:', error);
       throw new BadRequestException(`Failed to fetch wall categories: ${error.message}`);
     }
   }
