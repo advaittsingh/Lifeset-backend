@@ -572,18 +572,33 @@ export class CmsService {
       }
 
       // Create bookmark
-      await this.prisma.postBookmark.create({
-        data: {
-          userId,
-          postId: articleId,
-        },
-      });
+      try {
+        await this.prisma.postBookmark.create({
+          data: {
+            userId,
+            postId: articleId,
+          },
+        });
 
-      this.logger.log(`Article ${articleId} bookmarked by user ${userId}`);
-      return { bookmarked: true, message: 'Article bookmarked successfully' };
+        this.logger.log(`Article ${articleId} bookmarked by user ${userId}`);
+        return { bookmarked: true, message: 'Article bookmarked successfully' };
+      } catch (createError: any) {
+        // Handle unique constraint error (P2002) - item already bookmarked
+        if (createError.code === 'P2002') {
+          // Item is already bookmarked, return success response
+          this.logger.log(`Article ${articleId} already bookmarked by user ${userId}`);
+          return { bookmarked: true, message: 'Already bookmarked', alreadyBookmarked: true };
+        }
+        throw createError;
+      }
     } catch (error: any) {
       if (error instanceof NotFoundException) {
         throw error;
+      }
+      // If it's a unique constraint error, treat as already bookmarked
+      if (error.code === 'P2002') {
+        this.logger.log(`Article ${articleId} already bookmarked by user ${userId} (unique constraint)`);
+        return { bookmarked: true, message: 'Already bookmarked', alreadyBookmarked: true };
       }
       this.logger.error(`Error bookmarking article ${articleId} for user ${userId}: ${error.message}`, error.stack);
       throw new BadRequestException(`Failed to bookmark article: ${error.message}`);
@@ -687,18 +702,33 @@ export class CmsService {
       }
 
       // Create bookmark
-      await this.prisma.postBookmark.create({
-        data: {
-          userId,
-          postId: articleId,
-        },
-      });
+      try {
+        await this.prisma.postBookmark.create({
+          data: {
+            userId,
+            postId: articleId,
+          },
+        });
 
-      this.logger.log(`Current affair ${articleId} bookmarked by user ${userId}`);
-      return { bookmarked: true, message: 'Article bookmarked successfully' };
+        this.logger.log(`Current affair ${articleId} bookmarked by user ${userId}`);
+        return { bookmarked: true, message: 'Article bookmarked successfully' };
+      } catch (createError: any) {
+        // Handle unique constraint error (P2002) - item already bookmarked
+        if (createError.code === 'P2002') {
+          // Item is already bookmarked, return success response
+          this.logger.log(`Current affair ${articleId} already bookmarked by user ${userId}`);
+          return { bookmarked: true, message: 'Already bookmarked', alreadyBookmarked: true };
+        }
+        throw createError;
+      }
     } catch (error: any) {
       if (error instanceof NotFoundException) {
         throw error;
+      }
+      // If it's a unique constraint error, treat as already bookmarked
+      if (error.code === 'P2002') {
+        this.logger.log(`Current affair ${articleId} already bookmarked by user ${userId} (unique constraint)`);
+        return { bookmarked: true, message: 'Already bookmarked', alreadyBookmarked: true };
       }
       this.logger.error(`Error bookmarking current affair ${articleId} for user ${userId}: ${error.message}`, error.stack);
       throw new BadRequestException(`Failed to bookmark article: ${error.message}`);

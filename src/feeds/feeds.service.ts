@@ -376,32 +376,48 @@ export class FeedsService {
   }
 
   async bookmarkFeed(userId: string, feedId: string) {
-    const existing = await this.prisma.postBookmark.findUnique({
-      where: {
-        userId_postId: {
-          userId,
-          postId: feedId,
+    try {
+      const existing = await this.prisma.postBookmark.findUnique({
+        where: {
+          userId_postId: {
+            userId,
+            postId: feedId,
+          },
         },
-      },
-    });
-
-    if (existing) {
-      await this.prisma.postBookmark.delete({
-        where: { id: existing.id },
       });
-      return { bookmarked: false };
+
+      if (existing) {
+        await this.prisma.postBookmark.delete({
+          where: { id: existing.id },
+        });
+        return { bookmarked: false, message: 'Bookmark removed successfully' };
+      }
+
+      try {
+        await this.prisma.postBookmark.create({
+          data: {
+            userId,
+            postId: feedId,
+          },
+        });
+
+        await this.analytics.trackEvent(userId, 'feed_save', 'feed', feedId);
+        return { bookmarked: true, message: 'Bookmarked successfully' };
+      } catch (createError: any) {
+        // Handle unique constraint error (P2002) - item already bookmarked
+        if (createError.code === 'P2002') {
+          // Item is already bookmarked, return success response
+          return { bookmarked: true, message: 'Already bookmarked', alreadyBookmarked: true };
+        }
+        throw createError;
+      }
+    } catch (error: any) {
+      // If it's a unique constraint error, treat as already bookmarked
+      if (error.code === 'P2002') {
+        return { bookmarked: true, message: 'Already bookmarked', alreadyBookmarked: true };
+      }
+      throw error;
     }
-
-    await this.prisma.postBookmark.create({
-      data: {
-        userId,
-        postId: feedId,
-      },
-    });
-
-    await this.analytics.trackEvent(userId, 'feed_save', 'feed', feedId);
-
-    return { bookmarked: true };
   }
 
   async commentOnFeed(userId: string, feedId: string, comment: string) {
