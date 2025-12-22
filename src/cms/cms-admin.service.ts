@@ -376,22 +376,52 @@ export class CmsAdminService {
 
   // ========== MCQ Management ==========
   async getMcqQuestions(filters?: any) {
-    const where: any = {};
-    if (filters?.categoryId) where.categoryId = filters.categoryId;
-    if (filters?.articleId) where.articleId = filters.articleId; // Support filtering by articleId
-    if (filters?.search) {
-      where.OR = [
-        { question: { contains: filters.search, mode: 'insensitive' } },
-      ];
-    }
+    try {
+      const where: any = {};
+      if (filters?.categoryId) where.categoryId = filters.categoryId;
+      if (filters?.articleId) where.articleId = filters.articleId; // Support filtering by articleId
+      if (filters?.search) {
+        where.OR = [
+          { question: { contains: filters.search, mode: 'insensitive' } },
+        ];
+      }
 
-    return this.prisma.mcqQuestion.findMany({
-      where,
-      include: { category: true },
-      orderBy: { createdAt: 'desc' },
-      skip: filters?.page ? (parseInt(String(filters.page), 10) - 1) * parseInt(String(filters.limit || 20), 10) : 0,
-      take: parseInt(String(filters?.limit || 20), 10),
-    });
+      const page = parseInt(String(filters?.page || 1), 10);
+      const limit = parseInt(String(filters?.limit || 20), 10);
+      const skip = (page - 1) * limit;
+
+      const [questions, total] = await Promise.all([
+        this.prisma.mcqQuestion.findMany({
+          where,
+          include: { 
+            category: true, // Include WallCategory relation
+          },
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+        }),
+        this.prisma.mcqQuestion.count({ where }),
+      ]);
+
+      // Filter out questions with null categories (invalid categoryId)
+      // Note: category relation is optional, so some questions might have null categories
+      const validQuestions = questions.filter(q => q.category !== null);
+
+      this.logger.log(`Found ${validQuestions.length} valid MCQ questions (${questions.length - validQuestions.length} with invalid categories)`);
+
+      return {
+        data: validQuestions,
+        pagination: {
+          page,
+          limit,
+          total: validQuestions.length, // Return count of valid questions
+          totalPages: Math.ceil(validQuestions.length / limit),
+        },
+      };
+    } catch (error: any) {
+      this.logger.error(`Error fetching MCQ questions: ${error.message}`, error.stack);
+      throw new BadRequestException(`Failed to fetch MCQ questions: ${error.message}`);
+    }
   }
 
   async createMcqQuestion(data: any) {

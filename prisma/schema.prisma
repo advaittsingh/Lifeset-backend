@@ -305,10 +305,11 @@ model WallCategory {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
-  posts    Post[]
-  parent   WallCategory?  @relation("CategoryHierarchy", fields: [parentCategoryId], references: [id], onDelete: Cascade)
-  children WallCategory[] @relation("CategoryHierarchy")
-  chapters Chapter[]
+  posts        Post[]
+  parent       WallCategory?  @relation("CategoryHierarchy", fields: [parentCategoryId], references: [id], onDelete: Cascade)
+  children     WallCategory[] @relation("CategoryHierarchy")
+  chapters     Chapter[]
+  mcqQuestions McqQuestion[]
 
   @@index([parentCategoryId])
   @@index([isActive])
@@ -945,7 +946,7 @@ model McqQuestion {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  category      McqCategory       @relation(fields: [categoryId], references: [id], onDelete: Cascade)
+  category      WallCategory?     @relation(fields: [categoryId], references: [id], onDelete: Cascade)
   attempts      McqAttempt[]
   bookmarks     McqBookmark[]
   views         McqView[]
@@ -953,8 +954,11 @@ model McqQuestion {
   viewDurations McqViewDuration[]
   reports       McqReport[]
   McqAnswered   McqAnswered[]
+  McqCategory   McqCategory?      @relation(fields: [mcqCategoryId], references: [id])
+  mcqCategoryId String?
 
   @@index([articleId])
+  @@index([categoryId])
 }
 
 model McqAttempt {

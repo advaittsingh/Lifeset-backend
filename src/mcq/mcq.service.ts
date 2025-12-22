@@ -9,9 +9,11 @@ export class McqService {
 
   async getCategories() {
     try {
-      // MCQ questions use McqCategory model (not WallCategory)
-      const categories = await this.prisma.mcqCategory.findMany({
+      // MCQ questions now use WallCategory (shared with General Knowledge)
+      // Get all parent categories (where parentCategoryId is null) that can be used for MCQs
+      const categories = await this.prisma.wallCategory.findMany({
         where: { 
+          parentCategoryId: null,
           isActive: true,
         },
         orderBy: { name: 'asc' },
