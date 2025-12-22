@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, InternalServerErrorException, Logger } from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service';
+import { detectDatabaseError, logErrorWithDatabaseDetection } from '../common/utils/database-error-detector.util';
 
 @Injectable()
 export class ProfilesService {
@@ -463,10 +464,34 @@ export class ProfilesService {
 
     // Handle experience - delete existing and create new ones
     if (experiencesToCreate !== undefined) {
-      this.logger.log(`📝 Processing experiences for user ${userId}`, {
-        count: Array.isArray(experiencesToCreate) ? experiencesToCreate.length : 'not an array',
-        type: typeof experiencesToCreate,
+      // 🔍 Enhanced logging: Log payload being sent
+      this.logger.log(`🔍 Experience save - Payload being sent`, {
+        userId,
+        experienceCount: Array.isArray(experiencesToCreate) ? experiencesToCreate.length : 'not an array',
+        experienceType: typeof experiencesToCreate,
+        rawPayload: JSON.stringify(experiencesToCreate, null, 2),
       });
+
+      // Validate each experience entry
+      if (Array.isArray(experiencesToCreate)) {
+        experiencesToCreate.forEach((exp: any, index: number) => {
+          const requiredFields = {
+            title: exp.designation || exp.title || null,
+            startDate: exp.startMonthYear || exp.startDate || null,
+          };
+          
+          this.logger.log(`🔍 Experience entry ${index + 1} - Required fields validation`, {
+            entryIndex: index + 1,
+            hasTitle: !!requiredFields.title,
+            hasStartDate: !!requiredFields.startDate,
+            title: requiredFields.title,
+            startDate: requiredFields.startDate,
+            companyName: exp.companyName || exp.company || null,
+            designation: exp.designation || null,
+            currentlyWorking: exp.currentlyWorking || exp.isCurrent || false,
+          });
+        });
+      }
 
       // Delete existing experiences
       try {
@@ -475,8 +500,14 @@ export class ProfilesService {
         });
         this.logger.log(`✅ Deleted existing experiences for user ${userId}`);
       } catch (deleteError: any) {
-        this.logger.warn(`⚠️ Error deleting existing experiences for user ${userId}: ${deleteError.message}`);
+        const dbErrorInfo = logErrorWithDatabaseDetection(
+          this.logger,
+          `Experience delete - Error deleting existing experiences for user ${userId}`,
+          deleteError,
+          { userId, studentId: updated.id }
+        );
         // Continue even if delete fails - might be first time creating experiences
+        this.logger.warn(`⚠️ Continuing despite delete error (might be first time creating experiences)`);
       }
 
       // Create new experiences (handle both empty array and non-empty array)
@@ -574,20 +605,84 @@ export class ProfilesService {
             });
 
             this.logger.log(`💾 Creating ${experienceData.length} experience records for user ${userId}...`);
-            await this.prisma.experience.createMany({
+            
+            // Log the data being sent to database
+            this.logger.log(`🔍 Experience save - Data being sent to database`, {
+              userId,
+              recordCount: experienceData.length,
+              sampleRecord: experienceData[0] ? {
+                title: experienceData[0].title,
+                companyName: experienceData[0].companyName,
+                startDate: experienceData[0].startDate,
+                endDate: experienceData[0].endDate,
+                currentlyWorking: experienceData[0].currentlyWorking,
+              } : null,
+            });
+            
+            const createResult = await this.prisma.experience.createMany({
               data: experienceData,
               skipDuplicates: true, // Skip duplicates if any
             });
-            this.logger.log(`✅ Successfully created ${experienceData.length} experience records for user ${userId}`);
-          } catch (createError: any) {
-            this.logger.error(`❌ Error creating experiences for user ${userId}`, {
-              message: createError.message,
-              code: createError.code,
-              meta: createError.meta,
+            
+            // ✅ Enhanced logging: Log backend response
+            this.logger.log(`✅ Experience save - Backend response`, {
+              userId,
+              recordsCreated: createResult.count,
+              expectedCount: experienceData.length,
+              success: createResult.count === experienceData.length,
             });
-            throw new BadRequestException(
-              `Failed to save experiences: ${createError.message}. Please check the data format.`
+            
+            this.logger.log(`✅ Successfully created ${createResult.count} experience records for user ${userId}`);
+          } catch (createError: any) {
+            // 🔴 Enhanced error logging with database detection
+            const dbErrorInfo = logErrorWithDatabaseDetection(
+              this.logger,
+              `Experience save error - Error creating experiences for user ${userId}`,
+              createError,
+              {
+                userId,
+                studentId: updated.id,
+                experienceCount: experiencesToCreate.length,
+                errorDetails: {
+                  message: createError.message,
+                  code: createError.code,
+                  meta: createError.meta,
+                  stack: createError.stack,
+                },
+              }
             );
+            
+            // Throw appropriate exception based on error type
+            if (dbErrorInfo.isDatabaseError) {
+              // Database error - use user-friendly message
+              throw new InternalServerErrorException({
+                message: dbErrorInfo.userFriendlyMessage,
+                error: 'Database Error',
+                isDatabaseError: true,
+                errorType: dbErrorInfo.errorType,
+                errorCode: dbErrorInfo.errorCode,
+                detectedKeywords: dbErrorInfo.detectedKeywords,
+                originalError: createError.message,
+              });
+            } else if (dbErrorInfo.errorType === 'validation') {
+              // Validation error
+              throw new BadRequestException({
+                message: dbErrorInfo.userFriendlyMessage,
+                error: 'Validation Error',
+                isDatabaseError: false,
+                errorType: dbErrorInfo.errorType,
+                originalError: createError.message,
+              });
+            } else {
+              // Other errors
+              throw new BadRequestException({
+                message: `Failed to save experiences: ${createError.message}. Please check the data format.`,
+                error: 'Save Error',
+                isDatabaseError: false,
+                errorType: dbErrorInfo.errorType,
+                originalError: createError.message,
+              });
+            }
           }
         } else {
           this.logger.log(`ℹ️ Empty experiences array - all experiences removed for user ${userId}`);

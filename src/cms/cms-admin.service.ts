@@ -407,15 +407,24 @@ export class CmsAdminService {
       // Note: category relation is optional, so some questions might have null categories
       const validQuestions = questions.filter(q => q.category !== null);
 
-      this.logger.log(`Found ${validQuestions.length} valid MCQ questions (${questions.length - validQuestions.length} with invalid categories)`);
+      // Count total valid questions (not just on this page)
+      const totalValid = await this.prisma.mcqQuestion.count({
+        where: {
+          ...where,
+          category: { isNot: null }, // Only count questions with valid categories
+        },
+      });
+
+      this.logger.log(`Found ${validQuestions.length} valid MCQ questions on page ${page} (${questions.length - validQuestions.length} with invalid categories)`);
+      this.logger.log(`Total valid questions in database: ${totalValid}`);
 
       return {
         data: validQuestions,
         pagination: {
           page,
           limit,
-          total: validQuestions.length, // Return count of valid questions
-          totalPages: Math.ceil(validQuestions.length / limit),
+          total: totalValid, // Return total count of valid questions across all pages
+          totalPages: Math.ceil(totalValid / limit),
         },
       };
     } catch (error: any) {
