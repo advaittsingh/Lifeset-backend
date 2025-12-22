@@ -91,5 +91,12 @@ export class AuthController {
   async getMe(@CurrentUser() user: any) {
     return this.authService.validateUser(user.id);
   }
+
+  @Public()
+  @Post('validate-session')
+  @ApiOperation({ summary: 'Validate if refresh token is still valid (without refreshing)' })
+  async validateSession(@Body() data: RefreshTokenDto) {
+    return this.authService.validateSession(data.refreshToken);
+  }
 }
 

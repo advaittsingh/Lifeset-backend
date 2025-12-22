@@ -881,9 +881,62 @@ export class AuthService {
     }
   }
 
+  async validateSession(refreshToken: string) {
+    try {
+      // Verify JWT token first
+      const payload = this.jwtService.verify(refreshToken, {
+        secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
+      });
+      const userId = payload.sub;
+
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+      });
+
+      if (!user || !user.isActive) {
+        return { valid: false, reason: 'USER_NOT_FOUND_OR_INACTIVE' };
+      }
+
+      // Verify refresh token exists in session
+      const session = await this.prisma.session.findFirst({
+        where: {
+          userId: user.id,
+          refreshToken,
+          expiresAt: { gt: new Date() },
+        },
+      });
+
+      if (!session) {
+        return { valid: false, reason: 'SESSION_NOT_FOUND_OR_EXPIRED' };
+      }
+
+      return { 
+        valid: true, 
+        userId: user.id,
+        expiresAt: session.expiresAt,
+      };
+    } catch (error: any) {
+      if (error.name === 'TokenExpiredError') {
+        return { valid: false, reason: 'TOKEN_EXPIRED' };
+      }
+      
+      if (error.name === 'JsonWebTokenError' || error.name === 'NotBeforeError') {
+        return { valid: false, reason: 'INVALID_TOKEN_FORMAT' };
+      }
+
+      this.logger.error(`Session validation error: ${error.message}`);
+      return { valid: false, reason: 'VALIDATION_ERROR' };
+    }
+  }
+
   async logout(userId: string, token: string) {
-    // Add token to blacklist
-    await this.redis.set(`blacklist:${token}`, '1', 900); // 15 minutes
+    try {
+      // Add token to blacklist
+      await this.redis.set(`blacklist:${token}`, '1', 900); // 15 minutes
+    } catch (error) {
+      this.logger.warn(`Failed to blacklist token (Redis may be unavailable): ${error.message}`);
+      // Continue with logout even if Redis fails
+    }
 
     // Delete session
     await this.prisma.session.deleteMany({
