@@ -929,6 +929,68 @@ export class AuthService {
     }
   }
 
+  /**
+   * Restore session from refresh token - used when app restarts
+   * Returns user info and new tokens if refresh token is valid
+   * This allows the app to restore user session after closing/reopening
+   */
+  async restoreSession(refreshToken: string) {
+    try {
+      // First validate the refresh token
+      const validation = await this.validateSession(refreshToken);
+      
+      if (!validation.valid) {
+        throw new UnauthorizedException(`Session restoration failed: ${validation.reason}`);
+      }
+
+      // Get user with full profile
+      const user = await this.prisma.user.findUnique({
+        where: { id: validation.userId },
+        include: {
+          studentProfile: true,
+          companyProfile: true,
+          collegeProfile: true,
+          adminProfile: true,
+        },
+      });
+
+      if (!user || !user.isActive) {
+        throw new UnauthorizedException('User not found or inactive');
+      }
+
+      // Generate new tokens (refresh the access token)
+      const tokens = await this.refreshToken(refreshToken);
+
+      // Return user info and new tokens
+      return {
+        user: {
+          id: user.id,
+          email: user.email,
+          mobile: user.mobile,
+          userType: user.userType,
+          isActive: user.isActive,
+          isVerified: user.isVerified,
+          profileImage: user.profileImage,
+          studentProfile: user.studentProfile,
+          companyProfile: user.companyProfile,
+          collegeProfile: user.collegeProfile,
+          adminProfile: user.adminProfile,
+          createdAt: user.createdAt,
+          updatedAt: user.updatedAt,
+        },
+        ...tokens, // Include accessToken and refreshToken
+      };
+    } catch (error: any) {
+      // Re-throw UnauthorizedException as-is
+      if (error instanceof UnauthorizedException) {
+        throw error;
+      }
+
+      this.logger.error(`Session restoration error: ${error.message}`, error.stack);
+      throw new UnauthorizedException('Failed to restore session. Please login again.');
+    }
+  }
+
   async logout(userId: string, token: string) {
     try {
       // Add token to blacklist

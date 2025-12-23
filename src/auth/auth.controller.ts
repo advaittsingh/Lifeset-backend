@@ -98,5 +98,24 @@ export class AuthController {
   async validateSession(@Body() data: RefreshTokenDto) {
     return this.authService.validateSession(data.refreshToken);
   }
+
+  @Public()
+  @Post('restore-session')
+  @ApiOperation({ 
+    summary: 'Restore user session from refresh token',
+    description: 'Use this endpoint when the app restarts to restore the user session. Call this on app startup with the stored refreshToken. Returns user info and new tokens if the refresh token is valid. This prevents users from being logged out when they close and reopen the app.'
+  })
+  async restoreSession(@Body() data: RefreshTokenDto) {
+    try {
+      const result = await this.authService.restoreSession(data.refreshToken);
+      return {
+        success: true,
+        data: result,
+      };
+    } catch (error: any) {
+      // Re-throw to let the exception filter handle it
+      throw error;
+    }
+  }
 }
 
