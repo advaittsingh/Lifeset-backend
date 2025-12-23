@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Patch, Delete, Body, Param, Query, UseGuards, UseInterceptors, UploadedFile, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Controller, Get, Post, Put, Patch, Delete, Body, Param, Query, UseGuards, UseInterceptors, UploadedFile, BadRequestException, NotFoundException, InternalServerErrorException, HttpException } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Express } from 'express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
@@ -30,48 +30,103 @@ export class AdminController {
   @Get('users')
   @ApiOperation({ summary: 'Get all users (Admin)' })
   async getUsers(@Query() filters: any) {
-    const where: any = {};
-    
-    if (filters.search) {
-      where.OR = [
-        { email: { contains: filters.search, mode: 'insensitive' } },
-        { mobile: { contains: filters.search, mode: 'insensitive' } },
-      ];
-    }
-    
-    if (filters.userType) {
-      where.userType = filters.userType;
-    }
+    try {
+      // Check database connection first
+      try {
+        await this.prisma.$queryRaw`SELECT 1`;
+      } catch (dbError: any) {
+        throw new InternalServerErrorException(
+          'Database connection failed. Please check DATABASE_URL environment variable and ensure the database is accessible.',
+        );
+      }
 
-    const limit = filters.limit ? parseInt(filters.limit.toString()) : 100;
-    const page = filters.page ? parseInt(filters.page.toString()) : 1;
-    const skip = (page - 1) * limit;
+      const where: any = {};
+      
+      if (filters.search) {
+        where.OR = [
+          { email: { contains: filters.search, mode: 'insensitive' } },
+          { mobile: { contains: filters.search, mode: 'insensitive' } },
+        ];
+      }
+      
+      if (filters.userType) {
+        where.userType = filters.userType;
+      }
 
-    const [users, total] = await Promise.all([
-      this.prisma.user.findMany({
-        where,
-        include: {
-          studentProfile: true,
-          companyProfile: true,
-          collegeProfile: true,
-          adminProfile: true,
+      const limit = filters.limit ? parseInt(filters.limit.toString()) : 100;
+      const page = filters.page ? parseInt(filters.page.toString()) : 1;
+      const skip = (page - 1) * limit;
+
+      // Try to fetch users with profiles, but fallback to basic user data if includes fail
+      let users: any[] = [];
+      let total = 0;
+      
+      try {
+        [users, total] = await Promise.all([
+          this.prisma.user.findMany({
+            where,
+            include: {
+              studentProfile: true,
+              companyProfile: true,
+              collegeProfile: true,
+              adminProfile: true,
+            },
+            skip,
+            take: limit,
+            orderBy: { createdAt: 'desc' },
+          }),
+          this.prisma.user.count({ where }),
+        ]);
+      } catch (includeError: any) {
+        // If include fails, try without includes
+        console.error('Error fetching users with includes:', includeError);
+        try {
+          [users, total] = await Promise.all([
+            this.prisma.user.findMany({
+              where,
+              skip,
+              take: limit,
+              orderBy: { createdAt: 'desc' },
+            }),
+            this.prisma.user.count({ where }),
+          ]);
+        } catch (fallbackError: any) {
+          console.error('Error fetching users without includes:', fallbackError);
+          users = [];
+          total = 0;
+        }
+      }
+
+      return {
+        data: users,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
         },
-        skip,
-        take: limit,
-        orderBy: { createdAt: 'desc' },
-      }),
-      this.prisma.user.count({ where }),
-    ]);
-
-    return {
-      data: users,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
+      };
+    } catch (error: any) {
+      if (error instanceof HttpException) {
+        throw error;
+      }
+      
+      if (error?.code === 'P1001' || error?.message?.includes('connect') || error?.message?.includes('timeout')) {
+        throw new InternalServerErrorException(
+          'Database connection error. Please check DATABASE_URL environment variable and ensure the database server is running.',
+        );
+      }
+      
+      if (error?.code?.startsWith('P')) {
+        throw new InternalServerErrorException(
+          `Database error: ${error.message || 'An error occurred while fetching users.'}`,
+        );
+      }
+      
+      throw new InternalServerErrorException(
+        error?.message || 'An error occurred while fetching users.',
+      );
+    }
   }
 
   @Patch('users/:id/activate')
