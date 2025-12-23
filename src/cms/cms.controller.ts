@@ -43,13 +43,16 @@ export class CmsController {
     return this.cmsService.getCurrentAffairs(filters, user?.id);
   }
 
-  @Get('current-affairs/:id')
-  @ApiOperation({ summary: 'Get current affair by ID' })
-  async getCurrentAffairById(
-    @Param('id') id: string,
-    @CurrentUser() user?: any,
-  ) {
-    return this.cmsService.getCurrentAffairById(id, user?.id);
+  @Get('current-affairs/categories')
+  @ApiOperation({ summary: 'Get all current affairs categories (parent categories)' })
+  async getCurrentAffairsCategories() {
+    return this.cmsService.getCurrentAffairsCategories();
+  }
+
+  @Get('current-affairs/daily-digest')
+  @ApiOperation({ summary: 'Get last 24 hours current affairs for daily digest' })
+  async getCurrentAffairsDailyDigest() {
+    return this.cmsService.getCurrentAffairsDailyDigest();
   }
 
   @Get('general-knowledge')
@@ -75,24 +78,6 @@ export class CmsController {
   async getGeneralKnowledgeDailyDigest(@Query('excludePublished') excludePublished?: string) {
     const excludePublishedBool = excludePublished === 'true' || excludePublished === undefined;
     return this.cmsService.getGeneralKnowledgeDailyDigest(excludePublishedBool);
-  }
-
-  @Get('general-knowledge/:id')
-  @ApiOperation({ summary: 'Get general knowledge article by ID' })
-  async getGeneralKnowledgeById(@Param('id') id: string) {
-    return this.cmsService.getGeneralKnowledgeById(id);
-  }
-
-  @Get('current-affairs/categories')
-  @ApiOperation({ summary: 'Get all current affairs categories (parent categories)' })
-  async getCurrentAffairsCategories() {
-    return this.cmsService.getCurrentAffairsCategories();
-  }
-
-  @Get('current-affairs/daily-digest')
-  @ApiOperation({ summary: 'Get last 24 hours current affairs for daily digest' })
-  async getCurrentAffairsDailyDigest() {
-    return this.cmsService.getCurrentAffairsDailyDigest();
   }
 
   @Get('general-knowledge/subcategories/:subCategoryId/sections')
@@ -123,6 +108,21 @@ export class CmsController {
   @ApiOperation({ summary: 'Get bookmarked current affairs articles' })
   async getBookmarkedCurrentAffairs(@CurrentUser() user: any, @Query() filters: any) {
     return this.cmsService.getBookmarkedCurrentAffairs(user.id, filters);
+  }
+
+  @Get('current-affairs/:id')
+  @ApiOperation({ summary: 'Get current affair by ID' })
+  async getCurrentAffairById(
+    @Param('id') id: string,
+    @CurrentUser() user?: any,
+  ) {
+    return this.cmsService.getCurrentAffairById(id, user?.id);
+  }
+
+  @Get('general-knowledge/:id')
+  @ApiOperation({ summary: 'Get general knowledge article by ID' })
+  async getGeneralKnowledgeById(@Param('id') id: string) {
+    return this.cmsService.getGeneralKnowledgeById(id);
   }
 
   @UseGuards(JwtAuthGuard)
