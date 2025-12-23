@@ -54,8 +54,9 @@ export class McqController {
 
   @Get('bookmarks')
   @ApiOperation({ summary: 'Get bookmarked questions' })
-  async getBookmarkedQuestions(@CurrentUser() user: any) {
-    return this.mcqService.getBookmarkedQuestions(user.id);
+  async getBookmarkedQuestions(@CurrentUser() user: any, @Query('limit') limit?: string) {
+    const limitNum = limit ? parseInt(limit, 10) : 1000;
+    return this.mcqService.getBookmarkedQuestions(user.id, limitNum);
   }
 
   @Get('attempts')

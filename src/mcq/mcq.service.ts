@@ -313,8 +313,8 @@ export class McqService {
     }
   }
 
-  async getBookmarkedQuestions(userId: string) {
-    return this.prisma.mcqBookmark.findMany({
+  async getBookmarkedQuestions(userId: string, limit: number = 1000) {
+    const bookmarks = await this.prisma.mcqBookmark.findMany({
       where: { userId },
       include: {
         question: {
@@ -324,7 +324,19 @@ export class McqService {
         },
       },
       orderBy: { createdAt: 'desc' },
+      take: limit,
     });
+
+    // Add isBookmarked flag to all questions
+    const questionsWithBookmarkFlag = bookmarks.map(bookmark => ({
+      ...bookmark.question,
+      isBookmarked: true,
+    }));
+
+    return {
+      data: questionsWithBookmarkFlag,
+      count: bookmarks.length,
+    };
   }
 
   async getUserAttempts(userId: string, questionId?: string) {

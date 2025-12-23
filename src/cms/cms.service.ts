@@ -921,12 +921,7 @@ export class CmsService {
       if (bookmarkedPostIds.length === 0) {
         return {
           data: [],
-          pagination: {
-            page,
-            limit,
-            total: 0,
-            totalPages: 0,
-          },
+          count: 0,
         };
       }
 
@@ -994,12 +989,7 @@ export class CmsService {
 
       return {
         data: postsWithMetadata,
-        pagination: {
-          page,
-          limit,
-          total,
-          totalPages: Math.ceil(total / limit),
-        },
+        count: total,
       };
     } catch (error: any) {
       this.logger.error(`Error getting bookmarked articles for user ${userId}: ${error.message}`, error.stack);
