@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsBoolean, IsArray, ValidateNested, IsNotEmpty, ValidateIf, Matches } from 'class-validator';
+import { IsString, IsBoolean, IsArray, ValidateNested, IsNotEmpty, ValidateIf, Matches, IsOptional } from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class ExperienceItemDto {
@@ -52,13 +52,15 @@ export class ExperienceItemDto {
   startMonthYear: string;
 
   @ApiProperty({ 
-    description: 'End date in MM/YYYY format (required only when currentlyWorking is false)', 
+    description: 'End date in MM/YYYY format (required only when currentlyWorking is false). Can be empty string when currentlyWorking is true.', 
     example: '12/2022',
     required: false 
   })
-  @ValidateIf((o) => !o.currentlyWorking)
-  @IsString()
+  @IsOptional()
+  @IsString({ message: 'endMonthYear must be a string' })
+  @ValidateIf((o) => !o.currentlyWorking && o.endMonthYear !== undefined && o.endMonthYear !== null && o.endMonthYear !== '')
   @IsNotEmpty({ message: 'endMonthYear is required when currentlyWorking is false' })
+  @ValidateIf((o) => o.endMonthYear && o.endMonthYear.trim() !== '')
   @Matches(/^(0[1-9]|1[0-2])\/\d{4}$/, {
     message: 'endMonthYear must be in MM/YYYY format (e.g., 12/2022)'
   })

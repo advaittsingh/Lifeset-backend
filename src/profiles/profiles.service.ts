@@ -773,6 +773,12 @@ export class ProfilesService {
    */
   async updateExperience(userId: string, experienceArray: any[]) {
     try {
+      this.logger.log(`📝 updateExperience called for user ${userId}`, {
+        experienceArrayLength: Array.isArray(experienceArray) ? experienceArray.length : 'not an array',
+        experienceArrayType: typeof experienceArray,
+        rawData: JSON.stringify(experienceArray, null, 2),
+      });
+
       // Verify user exists and is a student
       const user = await this.prisma.user.findUnique({
         where: { id: userId },
@@ -780,19 +786,23 @@ export class ProfilesService {
       });
 
       if (!user) {
+        this.logger.warn(`User not found: ${userId}`);
         throw new NotFoundException('User not found');
       }
 
       if (user.userType !== 'STUDENT') {
+        this.logger.warn(`User is not a student: ${userId}, userType: ${user.userType}`);
         throw new BadRequestException('User is not a student');
       }
 
       if (!user.studentProfile) {
+        this.logger.warn(`Student profile not found for user: ${userId}`);
         throw new NotFoundException('Student profile not found');
       }
 
       // Validate experience array
       if (!Array.isArray(experienceArray)) {
+        this.logger.error(`Experience is not an array: ${typeof experienceArray}`);
         throw new BadRequestException('Experience must be an array');
       }
 
@@ -905,11 +915,39 @@ export class ProfilesService {
           };
         });
 
-        await this.prisma.experience.createMany({
-          data: experienceData,
+        this.logger.log(`💾 Attempting to create ${experienceData.length} experience records for user ${userId}`, {
+          sampleRecord: experienceData[0] ? {
+            title: experienceData[0].title,
+            companyName: experienceData[0].companyName,
+            designation: experienceData[0].designation,
+            startDate: experienceData[0].startDate,
+            endDate: experienceData[0].endDate,
+            currentlyWorking: experienceData[0].currentlyWorking,
+          } : null,
         });
 
-        this.logger.log(`✅ Created ${experienceData.length} experience records for user ${userId}`);
+        try {
+          const createResult = await this.prisma.experience.createMany({
+            data: experienceData,
+          });
+
+          this.logger.log(`✅ Successfully created ${createResult.count} experience records for user ${userId}`, {
+            expectedCount: experienceData.length,
+            actualCount: createResult.count,
+          });
+
+          if (createResult.count !== experienceData.length) {
+            this.logger.warn(`⚠️ Mismatch: Expected ${experienceData.length} records, but only ${createResult.count} were created`);
+          }
+        } catch (dbError: any) {
+          this.logger.error(`❌ Database error creating experiences for user ${userId}:`, {
+            error: dbError.message,
+            code: dbError.code,
+            meta: dbError.meta,
+            stack: dbError.stack,
+          });
+          throw new InternalServerErrorException(`Failed to save experiences: ${dbError.message}`);
+        }
       } else {
         this.logger.log(`ℹ️ Empty experience array - all experiences removed for user ${userId}`);
       }

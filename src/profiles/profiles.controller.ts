@@ -1,4 +1,4 @@
-import { Controller, Get, Put, Post, Body, UseGuards } from '@nestjs/common';
+import { Controller, Get, Put, Post, Body, UseGuards, BadRequestException } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { ProfilesService } from './profiles.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
@@ -72,8 +72,21 @@ export class ProfilesController {
     summary: 'Update student experience',
     description: 'Replace the entire experience array. Required fields: companyName, location, department, designation, startMonthYear, aboutRole. endMonthYear is required only when currentlyWorking is false. Date format: MM/YYYY (e.g., 01/2020).'
   })
-  async updateExperience(@CurrentUser() user: any, @Body() data: UpdateExperienceDto) {
-    return this.profilesService.updateExperience(user.id, data.experience);
+  async updateExperience(@CurrentUser() user: any, @Body() data: any) {
+    try {
+      // Handle both DTO format and direct array format
+      const experienceArray = data.experience || data;
+      
+      if (!Array.isArray(experienceArray)) {
+        throw new BadRequestException('Experience must be an array');
+      }
+      
+      return await this.profilesService.updateExperience(user.id, experienceArray);
+    } catch (error: any) {
+      // Log the error for debugging
+      console.error('Error in updateExperience controller:', error);
+      throw error;
+    }
   }
 }
 
