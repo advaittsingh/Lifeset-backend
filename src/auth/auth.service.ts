@@ -933,19 +933,21 @@ export class AuthService {
    * Restore session from refresh token - used when app restarts
    * Returns user info and new tokens if refresh token is valid
    * This allows the app to restore user session after closing/reopening
+   * More robust than refreshToken - doesn't delete all sessions on failure
    */
   async restoreSession(refreshToken: string) {
+    let userId: string | null = null;
+    
     try {
-      // First validate the refresh token
-      const validation = await this.validateSession(refreshToken);
-      
-      if (!validation.valid) {
-        throw new UnauthorizedException(`Session restoration failed: ${validation.reason}`);
-      }
+      // Verify JWT token first
+      const payload = this.jwtService.verify(refreshToken, {
+        secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
+      });
+      userId = payload.sub;
 
-      // Get user with full profile
+      // Find user with full profile
       const user = await this.prisma.user.findUnique({
-        where: { id: validation.userId },
+        where: { id: userId },
         include: {
           studentProfile: true,
           companyProfile: true,
@@ -955,11 +957,53 @@ export class AuthService {
       });
 
       if (!user || !user.isActive) {
+        this.logger.warn(`Session restoration failed: User ${userId} not found or inactive`);
         throw new UnauthorizedException('User not found or inactive');
       }
 
-      // Generate new tokens (refresh the access token)
-      const tokens = await this.refreshToken(refreshToken);
+      // Find session by refreshToken - more lenient lookup (check if expired)
+      const session = await this.prisma.session.findFirst({
+        where: {
+          userId: user.id,
+          refreshToken,
+        },
+        orderBy: {
+          createdAt: 'desc', // Get the most recent session if multiple exist
+        },
+      });
+
+      if (!session) {
+        this.logger.warn(`Session restoration failed: No session found for refreshToken (user: ${userId})`);
+        throw new UnauthorizedException('Session not found. Please login again.');
+      }
+
+      // Check if session is expired
+      if (session.expiresAt < new Date()) {
+        this.logger.warn(`Session restoration failed: Session expired for user ${userId}`);
+        // Delete expired session
+        await this.prisma.session.delete({
+          where: { id: session.id },
+        });
+        throw new UnauthorizedException('Session expired. Please login again.');
+      }
+
+      // Generate new tokens
+      const tokens = await this.generateTokens(user);
+
+      // Update session with new tokens and extend expiration
+      const refreshExpiresIn = this.configService.get<string>('JWT_REFRESH_EXPIRES_IN', '90d');
+      const expirationMs = this.parseExpirationDuration(refreshExpiresIn);
+      
+      await this.prisma.session.update({
+        where: { id: session.id },
+        data: {
+          token: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+          expiresAt: new Date(Date.now() + expirationMs),
+        },
+      });
+
+      this.logger.log(`✅ Session restored successfully for user ${userId}`);
 
       // Return user info and new tokens
       return {
@@ -981,12 +1025,27 @@ export class AuthService {
         ...tokens, // Include accessToken and refreshToken
       };
     } catch (error: any) {
+      // Handle JWT verification errors
+      if (error.name === 'TokenExpiredError') {
+        this.logger.warn(`Session restoration failed: Refresh token expired for user ${userId || 'unknown'}`);
+        throw new UnauthorizedException('Refresh token expired. Please login again.');
+      }
+      
+      if (error.name === 'JsonWebTokenError' || error.name === 'NotBeforeError') {
+        this.logger.warn(`Session restoration failed: Invalid refresh token format for user ${userId || 'unknown'}`);
+        throw new UnauthorizedException('Invalid refresh token. Please login again.');
+      }
+
       // Re-throw UnauthorizedException as-is
       if (error instanceof UnauthorizedException) {
         throw error;
       }
 
-      this.logger.error(`Session restoration error: ${error.message}`, error.stack);
+      this.logger.error(`Session restoration error: ${error.message}`, {
+        userId,
+        errorName: error.name,
+        errorStack: error.stack,
+      });
       throw new UnauthorizedException('Failed to restore session. Please login again.');
     }
   }
@@ -1029,16 +1088,52 @@ export class AuthService {
       
       const expiresAt = new Date(Date.now() + expirationMs);
 
-      await this.prisma.session.create({
-        data: {
+      // Check if user has an existing non-expired session
+      const existingSession = await this.prisma.session.findFirst({
+        where: {
           userId,
-          token,
-          refreshToken,
-          expiresAt,
+          expiresAt: { gt: new Date() },
+        },
+        orderBy: {
+          createdAt: 'desc',
         },
       });
+
+      if (existingSession) {
+        // Update existing session with new tokens
+        await this.prisma.session.update({
+          where: { id: existingSession.id },
+          data: {
+            token,
+            refreshToken,
+            expiresAt,
+          },
+        });
+        this.logger.log(`Updated existing session for user ${userId}`);
+      } else {
+        // Create new session
+        await this.prisma.session.create({
+          data: {
+            userId,
+            token,
+            refreshToken,
+            expiresAt,
+          },
+        });
+        this.logger.log(`Created new session for user ${userId}`);
+      }
+
+      // Clean up expired sessions for this user (non-blocking)
+      this.prisma.session.deleteMany({
+        where: {
+          userId,
+          expiresAt: { lt: new Date() },
+        },
+      }).catch((error) => {
+        this.logger.warn(`Failed to cleanup expired sessions for user ${userId}: ${error.message}`);
+      });
     } catch (error) {
-      this.logger.error(`Failed to create session for user ${userId}: ${error.message}`, error.stack);
+      this.logger.error(`Failed to create/update session for user ${userId}: ${error.message}`, error.stack);
       throw error;
     }
   }

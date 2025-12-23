@@ -103,7 +103,7 @@ export class AuthController {
   @Post('restore-session')
   @ApiOperation({ 
     summary: 'Restore user session from refresh token',
-    description: 'Use this endpoint when the app restarts to restore the user session. Call this on app startup with the stored refreshToken. Returns user info and new tokens if the refresh token is valid. This prevents users from being logged out when they close and reopen the app.'
+    description: 'Use this endpoint when the app restarts to restore the user session. Call this on app startup with the stored refreshToken. Returns user info and new tokens if the refresh token is valid. This prevents users from being logged out when they close and reopen the app. IMPORTANT: The client MUST update the stored refreshToken with the new refreshToken returned in the response.'
   })
   async restoreSession(@Body() data: RefreshTokenDto) {
     try {
@@ -111,6 +111,7 @@ export class AuthController {
       return {
         success: true,
         data: result,
+        message: 'Session restored successfully. Please update your stored refreshToken with the new one.',
       };
     } catch (error: any) {
       // Re-throw to let the exception filter handle it
