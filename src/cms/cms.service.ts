@@ -444,6 +444,53 @@ export class CmsService {
     }
   }
 
+  async getCurrentAffairsCategories() {
+    try {
+      // Get all parent categories (where parentCategoryId is null) for current affairs
+      const categories = await this.prisma.wallCategory.findMany({
+        where: {
+          parentCategoryId: null,
+          isActive: true,
+        },
+        orderBy: { name: 'asc' },
+        include: {
+          _count: {
+            select: {
+              posts: {
+                where: {
+                  postType: 'CURRENT_AFFAIRS',
+                  isActive: true,
+                },
+              },
+            },
+          },
+        },
+      });
+
+      // Map to include postCount
+      const categoriesWithCounts = categories.map(cat => ({
+        id: cat.id,
+        name: cat.name,
+        description: cat.description,
+        isActive: cat.isActive,
+        postCount: cat._count.posts,
+        createdAt: cat.createdAt,
+        updatedAt: cat.updatedAt,
+      }));
+
+      return {
+        data: categoriesWithCounts,
+        count: categoriesWithCounts.length,
+      };
+    } catch (error: any) {
+      this.logger.error(`Error getting current affairs categories: ${error.message}`, error.stack);
+      if (error.code === 'P1001' || error.message?.includes('connect') || error.message?.includes('DATABASE_URL')) {
+        throw new BadRequestException('Database connection error. Please check DATABASE_URL environment variable.');
+      }
+      throw new BadRequestException(`Failed to get current affairs categories: ${error.message}`);
+    }
+  }
+
   async getSubcategories(categoryId: string) {
     try {
       // Verify category exists and is a top-level category (parentCategoryId should be null)

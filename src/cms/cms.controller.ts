@@ -83,6 +83,12 @@ export class CmsController {
     return this.cmsService.getGeneralKnowledgeById(id);
   }
 
+  @Get('current-affairs/categories')
+  @ApiOperation({ summary: 'Get all current affairs categories (parent categories)' })
+  async getCurrentAffairsCategories() {
+    return this.cmsService.getCurrentAffairsCategories();
+  }
+
   @Get('current-affairs/daily-digest')
   @ApiOperation({ summary: 'Get last 24 hours current affairs for daily digest' })
   async getCurrentAffairsDailyDigest() {
