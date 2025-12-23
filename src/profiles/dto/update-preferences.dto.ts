@@ -25,3 +25,5 @@ export class UpdatePreferencesDto {
   userStatus?: 'school' | 'college' | 'working_professional';
 }
 
+
+

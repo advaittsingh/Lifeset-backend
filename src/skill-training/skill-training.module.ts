@@ -11,3 +11,5 @@ import { SkillTrainingService } from './skill-training.service';
 })
 export class SkillTrainingModule {}
 
+
+

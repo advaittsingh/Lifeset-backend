@@ -78,8 +78,17 @@ export class CmsService {
       }, {} as Record<string, { isRead: boolean; readAt: Date | null }>);
     }
 
+    // Filter by language if provided (check metadata)
+    let filteredPosts = posts;
+    if (filters?.language) {
+      filteredPosts = posts.filter(post => {
+        const metadata = (post.metadata as any) || {};
+        return metadata.language === filters.language;
+      });
+    }
+
     // Add searchText and read status to each post
-    const postsWithMetadata = posts.map(post => {
+    const postsWithMetadata = filteredPosts.map(post => {
       const metadata = (post.metadata as any) || {};
       const searchText = [
         post.title,
@@ -104,13 +113,15 @@ export class CmsService {
       };
     });
 
+    // Note: Total count doesn't account for language filtering for simplicity
+    // The actual returned data is filtered correctly
     return {
       data: postsWithMetadata,
       pagination: {
         page,
         limit,
-        total,
-        totalPages: Math.ceil(total / limit),
+        total: postsWithMetadata.length, // Use filtered count
+        totalPages: Math.ceil(postsWithMetadata.length / limit),
       },
     };
   }
@@ -212,8 +223,17 @@ export class CmsService {
         this.prisma.post.count({ where }),
       ]);
 
+      // Filter by language if provided (check metadata)
+      let filteredPosts = posts;
+      if (filters?.language) {
+        filteredPosts = posts.filter(post => {
+          const metadata = (post.metadata as any) || {};
+          return metadata.language === filters.language;
+        });
+      }
+
       // Add searchText to each post for enhanced search
-      const postsWithSearchText = posts.map(post => {
+      const postsWithSearchText = filteredPosts.map(post => {
         const metadata = (post.metadata as any) || {};
         const searchText = [
           post.title,
@@ -234,13 +254,15 @@ export class CmsService {
         };
       });
 
+      // Note: Total count doesn't account for language filtering for simplicity
+      // The actual returned data is filtered correctly
       return {
         data: postsWithSearchText,
         pagination: {
           page,
           limit,
-          total,
-          totalPages: Math.ceil(total / limit),
+          total: filteredPosts.length, // Use filtered count
+          totalPages: Math.ceil(filteredPosts.length / limit),
         },
       };
     } catch (error: any) {
@@ -300,37 +322,68 @@ export class CmsService {
     };
   }
 
-  async getCurrentAffairsDailyDigest() {
+  async getCurrentAffairsDailyDigest(language?: string, userId?: string) {
     // Get last 24 hours current affairs
     const yesterday = new Date();
     yesterday.setHours(yesterday.getHours() - 24);
 
-    const posts = await this.prisma.post.findMany({
-      where: {
-        postType: 'CURRENT_AFFAIRS',
-        isActive: true,
-        createdAt: {
-          gte: yesterday,
-        },
+    const where: any = {
+      postType: 'CURRENT_AFFAIRS',
+      isActive: true,
+      createdAt: {
+        gte: yesterday,
       },
+    };
+
+    const posts = await this.prisma.post.findMany({
+      where,
       include: { user: true, category: true },
       orderBy: { createdAt: 'desc' },
       take: 50, // Get more to allow filtering
     });
 
     // Filter by metadata.isPublished if available
-    const publishedPosts = posts.filter(post => {
+    let publishedPosts = posts.filter(post => {
       const metadata = post.metadata as any || {};
       return metadata.isPublished !== false; // Include if not explicitly false
     });
 
+    // Filter by language if provided
+    if (language) {
+      publishedPosts = publishedPosts.filter(post => {
+        const metadata = post.metadata as any || {};
+        return metadata.language === language;
+      });
+    }
+
+    // Get read status for user if provided
+    let readStatusMap: Record<string, boolean> = {};
+    if (userId && publishedPosts.length > 0) {
+      const readRecords = await this.prisma.postRead.findMany({
+        where: {
+          userId,
+          postId: { in: publishedPosts.map(p => p.id) },
+        },
+      });
+      readStatusMap = readRecords.reduce((acc, record) => {
+        acc[record.postId] = true;
+        return acc;
+      }, {} as Record<string, boolean>);
+    }
+
+    // Add completion status to each post
+    const postsWithCompletion = publishedPosts.slice(0, 20).map(post => ({
+      ...post,
+      isRead: readStatusMap[post.id] || false,
+    }));
+
     return {
-      data: publishedPosts.slice(0, 20), // Return top 20
+      data: postsWithCompletion,
       count: publishedPosts.length,
     };
   }
 
-  async getGeneralKnowledgeDailyDigest(excludePublished: boolean = true) {
+  async getGeneralKnowledgeDailyDigest(excludePublished: boolean = true, language?: string, userId?: string) {
     try {
       // Get posts that haven't been shown in daily digest in the last 7 days
       const sevenDaysAgo = new Date();
@@ -347,22 +400,49 @@ export class CmsService {
         excludedPostIds = shownPosts.map(sp => sp.postId);
       }
 
+      // Build where clause
+      const where: any = {
+        postType: 'COLLEGE_FEED',
+        isActive: true,
+        ...(excludedPostIds.length > 0 && {
+          id: { notIn: excludedPostIds },
+        }),
+      };
+
       // Get 20 random general knowledge articles (excluding already shown ones)
       const posts = await this.prisma.post.findMany({
-        where: {
-          postType: 'COLLEGE_FEED',
-          isActive: true,
-          ...(excludedPostIds.length > 0 && {
-            id: { notIn: excludedPostIds },
-          }),
-        },
+        where,
         include: { user: true, category: true },
         take: excludedPostIds.length > 0 ? 100 : 20, // Get more for randomization if we have exclusions
       });
 
+      // Filter by language if provided
+      let filteredPosts = posts;
+      if (language) {
+        filteredPosts = posts.filter(post => {
+          const metadata = (post.metadata as any) || {};
+          return metadata.language === language;
+        });
+      }
+
       // Shuffle and take 20 random
-      const shuffled = posts.sort(() => 0.5 - Math.random());
+      const shuffled = filteredPosts.sort(() => 0.5 - Math.random());
       const randomPosts = shuffled.slice(0, 20);
+
+      // Get read status for user if provided
+      let readStatusMap: Record<string, boolean> = {};
+      if (userId && randomPosts.length > 0) {
+        const readRecords = await this.prisma.postRead.findMany({
+          where: {
+            userId,
+            postId: { in: randomPosts.map(p => p.id) },
+          },
+        });
+        readStatusMap = readRecords.reduce((acc, record) => {
+          acc[record.postId] = true;
+          return acc;
+        }, {} as Record<string, boolean>);
+      }
 
       // Track the articles shown in daily digest
       if (randomPosts.length > 0) {
@@ -380,10 +460,16 @@ export class CmsService {
         }
       }
 
-      this.logger.log(`✅ Returning ${randomPosts.length} GK articles for daily digest`);
+      // Add completion status to each post
+      const postsWithCompletion = randomPosts.map(post => ({
+        ...post,
+        isRead: readStatusMap[post.id] || false,
+      }));
+
+      this.logger.log(`✅ Returning ${postsWithCompletion.length} GK articles for daily digest`);
       return {
-        data: randomPosts,
-        count: randomPosts.length,
+        data: postsWithCompletion,
+        count: postsWithCompletion.length,
       };
     } catch (error: any) {
       this.logger.error(`❌ Error getting general knowledge daily digest: ${error.message}`, error.stack);

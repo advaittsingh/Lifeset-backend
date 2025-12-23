@@ -51,8 +51,11 @@ export class CmsController {
 
   @Get('current-affairs/daily-digest')
   @ApiOperation({ summary: 'Get last 24 hours current affairs for daily digest' })
-  async getCurrentAffairsDailyDigest() {
-    return this.cmsService.getCurrentAffairsDailyDigest();
+  async getCurrentAffairsDailyDigest(
+    @Query('language') language?: string,
+    @CurrentUser() user?: any,
+  ) {
+    return this.cmsService.getCurrentAffairsDailyDigest(language, user?.id);
   }
 
   @Get('general-knowledge')
@@ -75,9 +78,13 @@ export class CmsController {
 
   @Get('general-knowledge/daily-digest')
   @ApiOperation({ summary: 'Get 20 random general knowledge articles for daily digest' })
-  async getGeneralKnowledgeDailyDigest(@Query('excludePublished') excludePublished?: string) {
+  async getGeneralKnowledgeDailyDigest(
+    @Query('excludePublished') excludePublished?: string,
+    @Query('language') language?: string,
+    @CurrentUser() user?: any,
+  ) {
     const excludePublishedBool = excludePublished === 'true' || excludePublished === undefined;
-    return this.cmsService.getGeneralKnowledgeDailyDigest(excludePublishedBool);
+    return this.cmsService.getGeneralKnowledgeDailyDigest(excludePublishedBool, language, user?.id);
   }
 
   @Get('general-knowledge/subcategories/:subCategoryId/sections')

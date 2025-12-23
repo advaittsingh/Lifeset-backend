@@ -5,3 +5,5 @@ SET "categoryId" = NULL
 WHERE "categoryId" IS NOT NULL
   AND "categoryId" NOT IN (SELECT id FROM "WallCategory");
 
+
+

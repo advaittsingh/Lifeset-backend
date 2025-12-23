@@ -50,3 +50,5 @@ WHERE "postType" = 'JOB' AND (metadata->>'isPrivate')::boolean = true;
 
 
 
+
+
