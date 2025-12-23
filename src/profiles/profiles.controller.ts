@@ -4,6 +4,7 @@ import { ProfilesService } from './profiles.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { UpdatePreferencesDto } from './dto/update-preferences.dto';
+import { UpdateExperienceDto } from './dto/update-experience.dto';
 
 @ApiTags('Profiles')
 @Controller('profiles')
@@ -64,6 +65,15 @@ export class ProfilesController {
   @ApiOperation({ summary: 'Update user preferences (preferredLanguage, userStatus)' })
   async updatePreferences(@CurrentUser() user: any, @Body() data: UpdatePreferencesDto) {
     return this.profilesService.updatePreferences(user.id, data);
+  }
+
+  @Put('student/experience')
+  @ApiOperation({ 
+    summary: 'Update student experience',
+    description: 'Replace the entire experience array. Required fields: companyName, location, department, designation, startMonthYear, aboutRole. endMonthYear is required only when currentlyWorking is false. Date format: MM/YYYY (e.g., 01/2020).'
+  })
+  async updateExperience(@CurrentUser() user: any, @Body() data: UpdateExperienceDto) {
+    return this.profilesService.updateExperience(user.id, data.experience);
   }
 }
 

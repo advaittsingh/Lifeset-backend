@@ -764,5 +764,179 @@ export class ProfilesService {
       data: updatedUser,
     };
   }
+
+  /**
+   * Update student experience - replaces entire experience array
+   * Required fields: companyName, location, department, designation, startMonthYear, aboutRole
+   * endMonthYear is required only when currentlyWorking is false
+   * Date format: MM/YYYY (e.g., 01/2020)
+   */
+  async updateExperience(userId: string, experienceArray: any[]) {
+    try {
+      // Verify user exists and is a student
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        include: { studentProfile: true },
+      });
+
+      if (!user) {
+        throw new NotFoundException('User not found');
+      }
+
+      if (user.userType !== 'STUDENT') {
+        throw new BadRequestException('User is not a student');
+      }
+
+      if (!user.studentProfile) {
+        throw new NotFoundException('Student profile not found');
+      }
+
+      // Validate experience array
+      if (!Array.isArray(experienceArray)) {
+        throw new BadRequestException('Experience must be an array');
+      }
+
+      // Validate each experience entry
+      for (let i = 0; i < experienceArray.length; i++) {
+        const exp = experienceArray[i];
+        
+        // Check required fields
+        if (!exp.companyName || typeof exp.companyName !== 'string' || exp.companyName.trim() === '') {
+          throw new BadRequestException(`Experience entry ${i + 1}: companyName is required`);
+        }
+        if (!exp.location || typeof exp.location !== 'string' || exp.location.trim() === '') {
+          throw new BadRequestException(`Experience entry ${i + 1}: location is required`);
+        }
+        if (!exp.department || typeof exp.department !== 'string' || exp.department.trim() === '') {
+          throw new BadRequestException(`Experience entry ${i + 1}: department is required`);
+        }
+        if (!exp.designation || typeof exp.designation !== 'string' || exp.designation.trim() === '') {
+          throw new BadRequestException(`Experience entry ${i + 1}: designation is required`);
+        }
+        if (!exp.startMonthYear || typeof exp.startMonthYear !== 'string' || exp.startMonthYear.trim() === '') {
+          throw new BadRequestException(`Experience entry ${i + 1}: startMonthYear is required`);
+        }
+        if (!exp.aboutRole || typeof exp.aboutRole !== 'string' || exp.aboutRole.trim() === '') {
+          throw new BadRequestException(`Experience entry ${i + 1}: aboutRole is required`);
+        }
+
+        // Validate date format MM/YYYY
+        const dateFormatRegex = /^(0[1-9]|1[0-2])\/\d{4}$/;
+        if (!dateFormatRegex.test(exp.startMonthYear)) {
+          throw new BadRequestException(`Experience entry ${i + 1}: startMonthYear must be in MM/YYYY format (e.g., 01/2020)`);
+        }
+
+        // Validate currentlyWorking
+        const currentlyWorking = exp.currentlyWorking === true || exp.currentlyWorking === 'true';
+        
+        // endMonthYear is required only when currentlyWorking is false
+        if (!currentlyWorking) {
+          // When currentlyWorking is false, endMonthYear is required
+          if (!exp.endMonthYear || typeof exp.endMonthYear !== 'string' || exp.endMonthYear.trim() === '') {
+            throw new BadRequestException(`Experience entry ${i + 1}: endMonthYear is required when currentlyWorking is false`);
+          }
+          if (!dateFormatRegex.test(exp.endMonthYear)) {
+            throw new BadRequestException(`Experience entry ${i + 1}: endMonthYear must be in MM/YYYY format (e.g., 12/2022)`);
+          }
+        } else {
+          // When currentlyWorking is true, endMonthYear should be empty string or not provided
+          // Normalize empty string to null for database storage
+          if (exp.endMonthYear === '' || (typeof exp.endMonthYear === 'string' && exp.endMonthYear.trim() === '')) {
+            exp.endMonthYear = null;
+          } else if (exp.endMonthYear) {
+            // If endMonthYear is provided when currentlyWorking is true, that's also valid (user might have ended the role)
+            // But validate the format if provided
+            if (!dateFormatRegex.test(exp.endMonthYear)) {
+              throw new BadRequestException(`Experience entry ${i + 1}: endMonthYear must be in MM/YYYY format (e.g., 12/2022)`);
+            }
+          }
+        }
+      }
+
+      // Delete all existing experiences (replace entire array)
+      await this.prisma.experience.deleteMany({
+        where: { studentId: user.studentProfile.id },
+      });
+
+      this.logger.log(`✅ Deleted existing experiences for user ${userId}`);
+
+      // Create new experiences
+      if (experienceArray.length > 0) {
+        const experienceData = experienceArray.map((exp: any, index: number) => {
+          // Parse startMonthYear to startDate (DateTime)
+          const startParts = exp.startMonthYear.split('/');
+          const startMonth = parseInt(startParts[0], 10);
+          const startYear = parseInt(startParts[1], 10);
+          const startDate = new Date(startYear, startMonth - 1, 1);
+
+          // Parse endMonthYear to endDate (DateTime) if provided
+          let endDate: Date | null = null;
+          if (exp.endMonthYear && exp.endMonthYear.trim() !== '') {
+            const endParts = exp.endMonthYear.split('/');
+            const endMonth = parseInt(endParts[0], 10);
+            const endYear = parseInt(endParts[1], 10);
+            endDate = new Date(endYear, endMonth - 1, 1);
+          }
+
+          const currentlyWorking = exp.currentlyWorking === true || exp.currentlyWorking === 'true';
+
+          return {
+            studentId: user.studentProfile.id,
+            // Required field: title (use designation)
+            title: exp.designation,
+            // Required fields from frontend
+            companyName: exp.companyName.trim(),
+            location: exp.location.trim(),
+            department: exp.department.trim(),
+            designation: exp.designation.trim(),
+            startMonthYear: exp.startMonthYear.trim(),
+            endMonthYear: exp.endMonthYear ? exp.endMonthYear.trim() : null,
+            aboutRole: exp.aboutRole.trim(),
+            // Legacy fields for backward compatibility
+            company: exp.companyName.trim(),
+            description: exp.aboutRole.trim(),
+            // DateTime fields
+            startDate,
+            endDate,
+            // Boolean fields
+            currentlyWorking,
+            isCurrent: currentlyWorking,
+            isFacultyMember: exp.isFacultyMember || false,
+          };
+        });
+
+        await this.prisma.experience.createMany({
+          data: experienceData,
+        });
+
+        this.logger.log(`✅ Created ${experienceData.length} experience records for user ${userId}`);
+      } else {
+        this.logger.log(`ℹ️ Empty experience array - all experiences removed for user ${userId}`);
+      }
+
+      // Recalculate profile score
+      await this.calculateProfileScore(userId);
+
+      // Return updated profile with experiences
+      return this.prisma.studentProfile.findUnique({
+        where: { id: user.studentProfile.id },
+        include: {
+          experiences: {
+            orderBy: {
+              startDate: 'desc',
+            },
+          },
+        },
+      });
+    } catch (error: any) {
+      // Re-throw known exceptions
+      if (error instanceof NotFoundException || error instanceof BadRequestException) {
+        throw error;
+      }
+
+      this.logger.error(`Error updating experience for user ${userId}: ${error.message}`, error.stack);
+      throw new InternalServerErrorException('Failed to update experience. Please try again.');
+    }
+  }
 }
 
