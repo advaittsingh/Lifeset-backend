@@ -40,9 +40,21 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       console.warn('Redis blacklist check failed, continuing without it:', error.message);
     }
 
-    const user = await this.prisma.user.findUnique({
-      where: { id: payload.sub },
-    });
+    // Find user with error handling for database issues
+    let user;
+    try {
+      user = await this.prisma.user.findUnique({
+        where: { id: payload.sub },
+      });
+    } catch (dbError: any) {
+      console.error(`Database error during JWT validation for user ${payload.sub}: ${dbError.message}`, dbError.stack);
+      // Check if it's a connection error
+      if (dbError.code === 'P1001' || dbError.message?.includes('connect') || dbError.message?.includes('timeout')) {
+        throw new UnauthorizedException('Database connection failed. Please try again later.');
+      }
+      // For other database errors, still throw unauthorized to prevent exposing internal errors
+      throw new UnauthorizedException('Authentication failed');
+    }
 
     if (!user || !user.isActive) {
       throw new UnauthorizedException('User not found or inactive');
