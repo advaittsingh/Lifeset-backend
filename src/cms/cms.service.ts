@@ -539,7 +539,8 @@ export class CmsService {
 
   async bookmarkArticle(userId: string, articleId: string) {
     try {
-      // Verify article exists
+      // Verify article exists - General Knowledge articles use COLLEGE_FEED postType
+      // We check by ID first, then verify it's a COLLEGE_FEED type
       const article = await this.prisma.post.findFirst({
         where: {
           id: articleId,
@@ -549,7 +550,17 @@ export class CmsService {
       });
 
       if (!article) {
-        throw new NotFoundException('General knowledge article not found');
+        // Try to find the article without postType restriction to give better error message
+        const anyArticle = await this.prisma.post.findFirst({
+          where: { id: articleId },
+        });
+        if (!anyArticle) {
+          throw new NotFoundException('Article not found');
+        }
+        if (anyArticle.postType !== 'COLLEGE_FEED') {
+          throw new NotFoundException('This endpoint is for General Knowledge articles only');
+        }
+        throw new NotFoundException('General knowledge article not found or inactive');
       }
 
       // Check if bookmark already exists

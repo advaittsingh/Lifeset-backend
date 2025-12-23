@@ -271,6 +271,15 @@ export class McqService {
 
   async bookmarkQuestion(userId: string, questionId: string) {
     try {
+      // Verify question exists
+      const question = await this.prisma.mcqQuestion.findUnique({
+        where: { id: questionId },
+      });
+
+      if (!question) {
+        throw new NotFoundException('MCQ question not found');
+      }
+
       const existing = await this.prisma.mcqBookmark.findUnique({
         where: {
           userId_questionId: {
@@ -305,6 +314,10 @@ export class McqService {
         throw createError;
       }
     } catch (error: any) {
+      // Re-throw NotFoundException
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
       // If it's a unique constraint error, treat as already bookmarked
       if (error.code === 'P2002') {
         return { bookmarked: true, message: 'Already bookmarked', alreadyBookmarked: true };
