@@ -74,17 +74,29 @@ export class ProfilesController {
   })
   async updateExperience(@CurrentUser() user: any, @Body() data: any) {
     try {
-      // Handle both DTO format and direct array format
-      const experienceArray = data.experience || data;
+      // Handle both DTO format { experience: [...] } and direct array format [...]
+      const experienceArray = Array.isArray(data) ? data : (data.experience || data);
       
       if (!Array.isArray(experienceArray)) {
-        throw new BadRequestException('Experience must be an array');
+        throw new BadRequestException('Experience must be an array. Received: ' + typeof experienceArray);
       }
       
-      return await this.profilesService.updateExperience(user.id, experienceArray);
+      const result = await this.profilesService.updateExperience(user.id, experienceArray);
+      
+      // Return success response with the updated profile
+      return {
+        success: true,
+        message: `Successfully saved ${experienceArray.length} experience${experienceArray.length !== 1 ? 's' : ''}`,
+        data: result,
+      };
     } catch (error: any) {
       // Log the error for debugging
-      console.error('Error in updateExperience controller:', error);
+      console.error('Error in updateExperience controller:', {
+        error: error.message,
+        stack: error.stack,
+        userId: user?.id,
+        dataReceived: JSON.stringify(data, null, 2),
+      });
       throw error;
     }
   }

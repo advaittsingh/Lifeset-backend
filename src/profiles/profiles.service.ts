@@ -135,6 +135,10 @@ export class ProfilesService {
   async calculateProfileScore(userId: string): Promise<number> {
     const profile = await this.prisma.studentProfile.findUnique({
       where: { userId },
+      include: {
+        experiences: true,
+        projects: true,
+      },
     });
 
     if (!profile) return 0;
@@ -178,12 +182,53 @@ export class ProfilesService {
   async getProfileCompletion(userId: string) {
     const profile = await this.prisma.studentProfile.findUnique({
       where: { userId },
-      select: { profileScore: true },
+      include: {
+        experiences: true,
+        projects: true,
+      },
     });
 
+    if (!profile) {
+      return {
+        completion: 0,
+        score: 0,
+        sections: {
+          education: 0,
+          skills: 0,
+          competitiveExams: 0,
+          projects: 0,
+          experience: 0,
+          introVideo: 0,
+        },
+      };
+    }
+
+    // Calculate individual section completion percentages
+    const sections = {
+      // Education: Check if any education field is filled
+      education: (profile.education10th || profile.education12th || profile.graduation || profile.postGraduation || profile.education) ? 100 : 0,
+      
+      // Skills: Check if technical or soft skills exist
+      skills: (profile.technicalSkills.length > 0 || profile.softSkills.length > 0) ? 100 : 0,
+      
+      // Competitive Exams: Check if competitiveExams array exists and has entries
+      competitiveExams: (profile.competitiveExams && 
+        (Array.isArray(profile.competitiveExams) ? profile.competitiveExams.length > 0 : Object.keys(profile.competitiveExams).length > 0)) ? 100 : 0,
+      
+      // Projects: Check if projects exist
+      projects: profile.projects && profile.projects.length > 0 ? 100 : 0,
+      
+      // Experience: Check if experiences exist
+      experience: profile.experiences && profile.experiences.length > 0 ? 100 : 0,
+      
+      // Intro Video: Check if introVideo exists
+      introVideo: profile.introVideo ? 100 : 0,
+    };
+
     return {
-      completion: profile?.profileScore || 0,
-      score: profile?.profileScore || 0,
+      completion: profile.profileScore || 0,
+      score: profile.profileScore || 0,
+      sections,
     };
   }
 
