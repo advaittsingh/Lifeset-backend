@@ -552,30 +552,11 @@ export class AuthService {
       throw new BadRequestException('Invalid phone number format');
     }
 
-    // Normalize OTP: trim whitespace and ensure it's a string
-    const normalizedOtp = String(otp || '').trim();
-
-    // Validate OTP format (should be 6 digits)
-    if (!/^[0-9]{6}$/.test(normalizedOtp)) {
-      this.logger.warn(`Invalid OTP format for ${normalizedPhone.substring(0, 3)}***: expected 6 digits, got "${normalizedOtp}"`);
-      throw new BadRequestException('Invalid OTP format. Please enter a 6-digit code.');
-    }
-
     const key = `otp:${normalizedPhone}`;
     const storedOtp = await this.redis.get(key);
 
-    // Log for debugging (without exposing actual OTP)
-    this.logger.log(`OTP verification attempt for ${normalizedPhone.substring(0, 3)}***: ${storedOtp ? 'OTP found in Redis' : 'No OTP found in Redis'}`);
-
-    if (!storedOtp) {
-      this.logger.warn(`OTP verification failed: No OTP found for ${normalizedPhone.substring(0, 3)}*** (may have expired or already used)`);
-      throw new BadRequestException('OTP expired or not found. Please request a new OTP.');
-    }
-
-    // Compare OTPs (both should be trimmed strings)
-    if (storedOtp.trim() !== normalizedOtp) {
-      this.logger.warn(`OTP verification failed: Mismatch for ${normalizedPhone.substring(0, 3)}***`);
-      throw new BadRequestException('Invalid OTP. Please check and try again.');
+    if (!storedOtp || storedOtp !== otp) {
+      throw new BadRequestException('Invalid OTP');
     }
 
     // Delete OTP after verification
@@ -958,25 +939,11 @@ export class AuthService {
     let userId: string | null = null;
     
     try {
-      // Validate refreshToken is provided
-      if (!refreshToken || typeof refreshToken !== 'string' || refreshToken.trim() === '') {
-        this.logger.warn('Session restoration failed: No refreshToken provided');
-        throw new UnauthorizedException('Refresh token is required');
-      }
-
       // Verify JWT token first
-      let payload: any;
-      try {
-        payload = this.jwtService.verify(refreshToken, {
-          secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
-        });
-        userId = payload.sub;
-        this.logger.log(`JWT verification successful for user ${userId}`);
-      } catch (jwtError: any) {
-        this.logger.warn(`JWT verification failed: ${jwtError.name} - ${jwtError.message}`);
-        // Re-throw to be handled by outer catch
-        throw jwtError;
-      }
+      const payload = this.jwtService.verify(refreshToken, {
+        secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
+      });
+      userId = payload.sub;
 
       // Find user with full profile
       const user = await this.prisma.user.findUnique({
