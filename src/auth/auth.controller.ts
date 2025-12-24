@@ -62,17 +62,8 @@ export class AuthController {
   @Post('refresh')
   @ApiOperation({ summary: 'Refresh access token' })
   async refresh(@Body() data: RefreshTokenDto) {
-    try {
-      const tokens = await this.authService.refreshToken(data.refreshToken);
-      return {
-        success: true,
-        data: tokens,
-      };
-    } catch (error: any) {
-      // Re-throw to let the exception filter handle it
-      // But ensure the error message is preserved
-      throw error;
-    }
+    // Return service result directly - TransformInterceptor will wrap it
+    return this.authService.refreshToken(data.refreshToken);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -106,17 +97,8 @@ export class AuthController {
     description: 'Use this endpoint when the app restarts to restore the user session. Call this on app startup with the stored refreshToken. Returns user info and new tokens if the refresh token is valid. This prevents users from being logged out when they close and reopen the app. IMPORTANT: The client MUST update the stored refreshToken with the new refreshToken returned in the response.'
   })
   async restoreSession(@Body() data: RefreshTokenDto) {
-    try {
-      const result = await this.authService.restoreSession(data.refreshToken);
-      return {
-        success: true,
-        data: result,
-        message: 'Session restored successfully. Please update your stored refreshToken with the new one.',
-      };
-    } catch (error: any) {
-      // Re-throw to let the exception filter handle it
-      throw error;
-    }
+    // Return service result directly - TransformInterceptor will wrap it
+    return this.authService.restoreSession(data.refreshToken);
   }
 }
 

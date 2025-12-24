@@ -312,9 +312,13 @@ export class ProfilesService {
       updateData.profileImage = data.profilePicture || null;
     }
     
-    // Map languageKnown to preferredLanguage
+    // Map languageKnown to preferredLanguage (if provided)
+    // Also allow preferredLanguage to be set directly
     if (data.languageKnown !== undefined) {
       updateData.preferredLanguage = data.languageKnown || null;
+    } else if (data.preferredLanguage !== undefined) {
+      // Allow preferredLanguage to be set directly as well
+      updateData.preferredLanguage = data.preferredLanguage || null;
     }
 
     // Process all fields from the original data object
@@ -330,7 +334,10 @@ export class ProfilesService {
         if (value === '' && key !== 'firstName' && key !== 'lastName') {
           updateData[key] = null;
         } else if (value !== undefined && value !== null) {
-          updateData[key] = value;
+          // Only set if not already set by mapping logic above
+          if (key !== 'preferredLanguage' || updateData.preferredLanguage === undefined) {
+            updateData[key] = value;
+          }
         }
       }
     }
@@ -520,21 +527,28 @@ export class ProfilesService {
       // Validate each experience entry
       if (Array.isArray(experiencesToCreate)) {
         experiencesToCreate.forEach((exp: any, index: number) => {
-          const requiredFields = {
-            title: exp.designation || exp.title || null,
-            startDate: exp.startMonthYear || exp.startDate || null,
-          };
+          // Check for minimum required fields
+          const hasTitle = !!(exp.designation || exp.title);
+          const hasStartDate = !!(exp.startMonthYear || exp.startDate);
           
           this.logger.log(`🔍 Experience entry ${index + 1} - Required fields validation`, {
             entryIndex: index + 1,
-            hasTitle: !!requiredFields.title,
-            hasStartDate: !!requiredFields.startDate,
-            title: requiredFields.title,
-            startDate: requiredFields.startDate,
+            hasTitle,
+            hasStartDate,
+            title: exp.designation || exp.title || null,
+            startDate: exp.startMonthYear || exp.startDate || null,
             companyName: exp.companyName || exp.company || null,
             designation: exp.designation || null,
             currentlyWorking: exp.currentlyWorking || exp.isCurrent || false,
           });
+          
+          // Warn if critical fields are missing (but don't fail - use defaults)
+          if (!hasTitle) {
+            this.logger.warn(`⚠️ Experience entry ${index + 1} missing title/designation, will use default`);
+          }
+          if (!hasStartDate) {
+            this.logger.warn(`⚠️ Experience entry ${index + 1} missing startMonthYear/startDate, will use current date`);
+          }
         });
       }
 
