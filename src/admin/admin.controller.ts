@@ -739,6 +739,134 @@ export class AdminController {
     };
   }
 
+  // Specific routes must come before parameterized routes like :id
+  @Get('ad-campaigns/active-users')
+  @ApiOperation({ summary: 'Get active users by hour for each day of week' })
+  async getActiveUsersByHour() {
+    // Helper function to generate default data structure
+    const generateDefaultData = (baseCount: number = 1000): Record<string, Record<string, number>> => {
+      const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      const hours = Array.from({ length: 24 }, (_, i) => i);
+      const activeUsersData: Record<string, Record<string, number>> = {};
+
+      for (const day of days) {
+        activeUsersData[day] = {};
+        
+        for (const hour of hours) {
+          // Simulate hourly distribution (peak hours: 7-9 AM, 6-10 PM)
+          let multiplier = 0.3; // Base activity
+          if (hour >= 7 && hour <= 9) multiplier = 0.8; // Morning peak
+          if (hour >= 18 && hour <= 22) multiplier = 1.0; // Evening peak
+          if (hour >= 0 && hour <= 5) multiplier = 0.1; // Night low
+          if (day === 'Sat' || day === 'Sun') multiplier *= 1.2; // Weekend boost
+
+          activeUsersData[day][hour.toString()] = Math.floor(baseCount * multiplier);
+        }
+      }
+
+      return activeUsersData;
+    };
+
+    try {
+      // Check if prisma is available
+      if (!this.prisma) {
+        console.error('Prisma service is not available');
+        return generateDefaultData(1000);
+      }
+
+      // Get active users count once (not 168 times!)
+      let baseCount = 1000; // Default fallback value
+      
+      try {
+        baseCount = await this.prisma.user.count({
+          where: {
+            isActive: true,
+            isVerified: true,
+          },
+        });
+      } catch (dbError: any) {
+        console.error('Database error counting users:', dbError);
+        // Use default count if database query fails
+        baseCount = 1000;
+      }
+
+      // Ensure baseCount is a valid number
+      if (typeof baseCount !== 'number' || isNaN(baseCount) || baseCount < 0) {
+        console.warn('Invalid baseCount, using default:', baseCount);
+        baseCount = 1000;
+      }
+
+      // Generate and return data
+      const activeUsersData = generateDefaultData(baseCount);
+      
+      // Return data directly - TransformInterceptor will wrap it
+      return activeUsersData;
+    } catch (error: any) {
+      console.error('Error getting active users:', error);
+      // Return mock data on error - ensure it's always a valid object
+      return generateDefaultData(1000);
+    }
+  }
+
+  @Get('ad-campaigns/performance/predictions')
+  @ApiOperation({ summary: 'Get ad performance predictions' })
+  async getAdPerformancePredictions(@Query() query: any) {
+    const slot = query.slot || '7PM - 7:59PM';
+    const dailyPrediction = 10000;
+    const adOpportunityDaily = 2000;
+    const slotAdOpportunity = 120;
+
+    // Get all active campaigns
+    const campaigns = await this.prisma.adCampaign.findMany({
+      where: { status: 'active' },
+      select: {
+        id: true,
+        dailyBudget: true,
+        slotAllocation: true,
+      },
+    });
+
+    // Calculate performance metrics
+    const totalBudget = campaigns.reduce((sum, c) => sum + (c.dailyBudget || 0), 0);
+    const ads = campaigns.map((campaign, index) => {
+      const money = campaign.slotAllocation || 21;
+      const percentageShare = totalBudget > 0 ? (money / totalBudget) * 100 : 0;
+      const visibilityPrediction = Math.floor(percentageShare * 0.26); // Simplified calculation
+
+      return {
+        id: `Ad ${index + 1}`,
+        money,
+        percentageShare: percentageShare.toFixed(2),
+        visibilityPrediction,
+      };
+    });
+
+    // Fill up to 10 ads if needed
+    while (ads.length < 10) {
+      ads.push({
+        id: `Ad ${ads.length + 1}`,
+        money: 21,
+        percentageShare: '7.27',
+        visibilityPrediction: 9,
+      });
+    }
+
+    return {
+      dailyPrediction,
+      adOpportunityDaily,
+      slotAdOpportunity,
+      selectedSlot: slot,
+      ads: ads.slice(0, 10),
+    };
+  }
+
+  @Post('ad-campaigns/estimate-users')
+  @ApiOperation({ summary: 'Estimate users based on filters' })
+  async estimateUsers(@Body() filters: any) {
+    const estimatedUsers = await this.calculateEstimatedUsers(filters);
+    return { estimatedUsers };
+  }
+
   @Get('ad-campaigns/:id')
   @ApiOperation({ summary: 'Get ad campaign by ID' })
   async getAdCampaign(@Param('id') id: string) {
@@ -747,7 +875,7 @@ export class AdminController {
     });
 
     if (!campaign) {
-      throw new Error('Ad campaign not found');
+      throw new NotFoundException('Ad campaign not found');
     }
 
     return campaign;
@@ -862,133 +990,6 @@ export class AdminController {
     });
 
     return campaign;
-  }
-
-  @Get('ad-campaigns/performance/predictions')
-  @ApiOperation({ summary: 'Get ad performance predictions' })
-  async getAdPerformancePredictions(@Query() query: any) {
-    const slot = query.slot || '7PM - 7:59PM';
-    const dailyPrediction = 10000;
-    const adOpportunityDaily = 2000;
-    const slotAdOpportunity = 120;
-
-    // Get all active campaigns
-    const campaigns = await this.prisma.adCampaign.findMany({
-      where: { status: 'active' },
-      select: {
-        id: true,
-        dailyBudget: true,
-        slotAllocation: true,
-      },
-    });
-
-    // Calculate performance metrics
-    const totalBudget = campaigns.reduce((sum, c) => sum + (c.dailyBudget || 0), 0);
-    const ads = campaigns.map((campaign, index) => {
-      const money = campaign.slotAllocation || 21;
-      const percentageShare = totalBudget > 0 ? (money / totalBudget) * 100 : 0;
-      const visibilityPrediction = Math.floor(percentageShare * 0.26); // Simplified calculation
-
-      return {
-        id: `Ad ${index + 1}`,
-        money,
-        percentageShare: percentageShare.toFixed(2),
-        visibilityPrediction,
-      };
-    });
-
-    // Fill up to 10 ads if needed
-    while (ads.length < 10) {
-      ads.push({
-        id: `Ad ${ads.length + 1}`,
-        money: 21,
-        percentageShare: '7.27',
-        visibilityPrediction: 9,
-      });
-    }
-
-    return {
-      dailyPrediction,
-      adOpportunityDaily,
-      slotAdOpportunity,
-      selectedSlot: slot,
-      ads: ads.slice(0, 10),
-    };
-  }
-
-  @Post('ad-campaigns/estimate-users')
-  @ApiOperation({ summary: 'Estimate users based on filters' })
-  async estimateUsers(@Body() filters: any) {
-    const estimatedUsers = await this.calculateEstimatedUsers(filters);
-    return { estimatedUsers };
-  }
-
-  @Get('ad-campaigns/active-users')
-  @ApiOperation({ summary: 'Get active users by hour for each day of week' })
-  async getActiveUsersByHour() {
-    // Helper function to generate default data structure
-    const generateDefaultData = (baseCount: number = 1000): Record<string, Record<string, number>> => {
-      const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-      const hours = Array.from({ length: 24 }, (_, i) => i);
-      const activeUsersData: Record<string, Record<string, number>> = {};
-
-      for (const day of days) {
-        activeUsersData[day] = {};
-        
-        for (const hour of hours) {
-          // Simulate hourly distribution (peak hours: 7-9 AM, 6-10 PM)
-          let multiplier = 0.3; // Base activity
-          if (hour >= 7 && hour <= 9) multiplier = 0.8; // Morning peak
-          if (hour >= 18 && hour <= 22) multiplier = 1.0; // Evening peak
-          if (hour >= 0 && hour <= 5) multiplier = 0.1; // Night low
-          if (day === 'Sat' || day === 'Sun') multiplier *= 1.2; // Weekend boost
-
-          activeUsersData[day][hour.toString()] = Math.floor(baseCount * multiplier);
-        }
-      }
-
-      return activeUsersData;
-    };
-
-    try {
-      // Check if prisma is available
-      if (!this.prisma) {
-        console.error('Prisma service is not available');
-        return generateDefaultData(1000);
-      }
-
-      // Get active users count once (not 168 times!)
-      let baseCount = 1000; // Default fallback value
-      
-      try {
-        baseCount = await this.prisma.user.count({
-          where: {
-            isActive: true,
-            isVerified: true,
-          },
-        });
-      } catch (dbError: any) {
-        console.error('Database error counting users:', dbError);
-        // Use default count if database query fails
-        baseCount = 1000;
-      }
-
-      // Ensure baseCount is a valid number
-      if (typeof baseCount !== 'number' || isNaN(baseCount) || baseCount < 0) {
-        console.warn('Invalid baseCount, using default:', baseCount);
-        baseCount = 1000;
-      }
-
-      // Generate and return data
-      const activeUsersData = generateDefaultData(baseCount);
-      
-      // Return data directly - TransformInterceptor will wrap it
-      return activeUsersData;
-    } catch (error: any) {
-      console.error('Error getting active users:', error);
-      // Return mock data on error - ensure it's always a valid object
-      return generateDefaultData(1000);
-    }
   }
 
   private async calculateEstimatedUsers(filters: any): Promise<number> {
