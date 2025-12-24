@@ -939,11 +939,25 @@ export class AuthService {
     let userId: string | null = null;
     
     try {
+      // Validate refreshToken is provided
+      if (!refreshToken || typeof refreshToken !== 'string' || refreshToken.trim() === '') {
+        this.logger.warn('Session restoration failed: No refreshToken provided');
+        throw new UnauthorizedException('Refresh token is required');
+      }
+
       // Verify JWT token first
-      const payload = this.jwtService.verify(refreshToken, {
-        secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
-      });
-      userId = payload.sub;
+      let payload: any;
+      try {
+        payload = this.jwtService.verify(refreshToken, {
+          secret: this.configService.get<string>('JWT_REFRESH_SECRET'),
+        });
+        userId = payload.sub;
+        this.logger.log(`JWT verification successful for user ${userId}`);
+      } catch (jwtError: any) {
+        this.logger.warn(`JWT verification failed: ${jwtError.name} - ${jwtError.message}`);
+        // Re-throw to be handled by outer catch
+        throw jwtError;
+      }
 
       // Find user with full profile
       const user = await this.prisma.user.findUnique({
