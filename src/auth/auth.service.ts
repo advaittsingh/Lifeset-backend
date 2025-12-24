@@ -552,11 +552,30 @@ export class AuthService {
       throw new BadRequestException('Invalid phone number format');
     }
 
+    // Normalize OTP: trim whitespace and ensure it's a string
+    const normalizedOtp = String(otp || '').trim();
+
+    // Validate OTP format (should be 6 digits)
+    if (!/^[0-9]{6}$/.test(normalizedOtp)) {
+      this.logger.warn(`Invalid OTP format for ${normalizedPhone.substring(0, 3)}***: expected 6 digits, got "${normalizedOtp}"`);
+      throw new BadRequestException('Invalid OTP format. Please enter a 6-digit code.');
+    }
+
     const key = `otp:${normalizedPhone}`;
     const storedOtp = await this.redis.get(key);
 
-    if (!storedOtp || storedOtp !== otp) {
-      throw new BadRequestException('Invalid OTP');
+    // Log for debugging (without exposing actual OTP)
+    this.logger.log(`OTP verification attempt for ${normalizedPhone.substring(0, 3)}***: ${storedOtp ? 'OTP found in Redis' : 'No OTP found in Redis'}`);
+
+    if (!storedOtp) {
+      this.logger.warn(`OTP verification failed: No OTP found for ${normalizedPhone.substring(0, 3)}*** (may have expired or already used)`);
+      throw new BadRequestException('OTP expired or not found. Please request a new OTP.');
+    }
+
+    // Compare OTPs (both should be trimmed strings)
+    if (storedOtp.trim() !== normalizedOtp) {
+      this.logger.warn(`OTP verification failed: Mismatch for ${normalizedPhone.substring(0, 3)}***`);
+      throw new BadRequestException('Invalid OTP. Please check and try again.');
     }
 
     // Delete OTP after verification
