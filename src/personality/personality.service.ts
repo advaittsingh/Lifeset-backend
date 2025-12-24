@@ -1,7 +1,6 @@
 import { Injectable, Logger, InternalServerErrorException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
-import { FileService } from '../file/file.service';
 import axios from 'axios';
 
 @Injectable()
@@ -13,69 +12,9 @@ export class PersonalityService {
   constructor(
     private prisma: PrismaService,
     private configService: ConfigService,
-    private fileService: FileService,
   ) {
     this.openaiApiKey = this.configService.get<string>('OPENAI_API_KEY') || '';
     this.openaiBaseUrl = this.configService.get<string>('OPENAI_BASE_URL') || 'https://api.openai.com/v1';
-  }
-
-  /**
-   * Transform image URL to accessible URL
-   * Handles S3 keys, relative paths, and full URLs
-   */
-  private async transformImageUrl(imageUrl: string | null | undefined): Promise<string | null> {
-    if (!imageUrl || imageUrl.trim() === '') {
-      return null;
-    }
-
-    const trimmedUrl = imageUrl.trim();
-
-    // If it's already a full URL (http/https) or data URI, return as-is
-    if (trimmedUrl.startsWith('http://') || trimmedUrl.startsWith('https://') || trimmedUrl.startsWith('data:')) {
-      return trimmedUrl;
-    }
-
-    // If it looks like an S3 key (no protocol, might contain path separators)
-    // Try to get a signed URL or construct public URL
-    try {
-      const bucket = this.configService.get<string>('S3_BUCKET_NAME');
-      const region = this.configService.get<string>('AWS_REGION') || 'us-east-1';
-      const cloudfrontUrl = this.configService.get<string>('CLOUDFRONT_URL');
-      
-      // If CloudFront URL is configured, use it (faster and cheaper than signed URLs)
-      if (cloudfrontUrl) {
-        // Remove trailing slash from CloudFront URL if present
-        const baseUrl = cloudfrontUrl.endsWith('/') ? cloudfrontUrl.slice(0, -1) : cloudfrontUrl;
-        // Remove leading slash from key if present
-        const key = trimmedUrl.startsWith('/') ? trimmedUrl.slice(1) : trimmedUrl;
-        return `${baseUrl}/${key}`;
-      }
-      
-      // If AWS is configured, try to get signed URL
-      if (bucket && this.configService.get('AWS_ACCESS_KEY_ID')) {
-        try {
-          const signedUrl = await this.fileService.getSignedUrl(trimmedUrl, 3600 * 24); // 24 hours
-          return signedUrl;
-        } catch (error) {
-          this.logger.warn(`Failed to get signed URL for ${trimmedUrl}, trying public URL: ${error.message}`);
-        }
-      }
-
-      // Fallback: construct public S3 URL
-      if (bucket) {
-        // Remove leading slash from key if present
-        const key = trimmedUrl.startsWith('/') ? trimmedUrl.slice(1) : trimmedUrl;
-        // Try different S3 URL formats
-        const s3Url = `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
-        return s3Url;
-      }
-
-      // If no bucket configured, return as-is (might be a relative path that frontend can handle)
-      return trimmedUrl;
-    } catch (error) {
-      this.logger.warn(`Error transforming image URL ${trimmedUrl}: ${error.message}`);
-      return trimmedUrl; // Return original URL as fallback
-    }
   }
 
   async getQuizQuestions() {
@@ -107,13 +46,11 @@ export class PersonalityService {
         return this.getDefaultQuestions();
       }
 
-      // Transform image URLs to accessible URLs
-      const questionsWithImages = await Promise.all(
-        questions.map(async (q) => ({
-          ...q,
-          imageUrl: await this.transformImageUrl(q.imageUrl),
-        }))
-      );
+      // Ensure imageUrl is included in response (even if null)
+      const questionsWithImages = questions.map(q => ({
+        ...q,
+        imageUrl: q.imageUrl || null, // Explicitly include imageUrl
+      }));
 
       return { questions: questionsWithImages };
     } catch (error: any) {
@@ -421,13 +358,11 @@ Respond in JSON format:
         }
       }
 
-      // Transform image URLs to accessible URLs
-      const questionsWithImages = await Promise.all(
-        questions.map(async (q) => ({
-          ...q,
-          imageUrl: await this.transformImageUrl(q.imageUrl),
-        }))
-      );
+      // Ensure imageUrl is included
+      const questionsWithImages = questions.map(q => ({
+        ...q,
+        imageUrl: q.imageUrl || null,
+      }));
 
       this.logger.log(`✅ Returning ${questionsWithImages.length} personality questions for user ${userId}`);
       return { questions: questionsWithImages };
