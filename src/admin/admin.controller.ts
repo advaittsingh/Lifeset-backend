@@ -829,22 +829,10 @@ export class AdminController {
         return generateDefaultData(1000);
       }
       
-      // Add array format as well for easier iteration if frontend needs it
-      // Frontend can use Object.values(result) or Object.keys(result).map(...)
-      // But also provide daysArray in case frontend expects it
-      const daysArray = days.map(day => ({
-        day,
-        hours: requiredHours.map(hour => ({
-          hour: parseInt(hour, 10),
-          users: result[day][hour],
-        })),
-      }));
-      
-      // Return object with both formats - main object format + array helper
-      return {
-        ...result, // Main object format: { Mon: { "0": 100, ... }, ... }
-        daysArray, // Array format for mapping: [{ day: "Mon", hours: [...] }, ...]
-      };
+      // Return pure object format: { Mon: { "0": 100, ... }, Tue: { ... }, ... }
+      // Frontend can iterate using Object.keys(result).map(...) or Object.values(result).map(...)
+      // TransformInterceptor wraps it: { success: true, data: result, timestamp: "..." }
+      return result;
     } catch (error: any) {
       console.error('Error getting active users:', error);
       // Return mock data on error - ensure it's always a valid object
