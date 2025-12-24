@@ -744,13 +744,16 @@ export class AdminController {
   @ApiOperation({ summary: 'Get active users by hour for each day of week' })
   async getActiveUsersByHour() {
     // Helper function to generate default data structure
-    const generateDefaultData = (baseCount: number = 1000): Record<string, Record<string, number>> => {
+    // Returns both object format (for backward compatibility) and array format (for frontend mapping)
+    const generateDefaultData = (baseCount: number = 1000) => {
       const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
       const hours = Array.from({ length: 24 }, (_, i) => i);
       const activeUsersData: Record<string, Record<string, number>> = {};
+      const activeUsersArray: Array<{ day: string; hours: Array<{ hour: number; users: number }> }> = [];
 
       for (const day of days) {
         activeUsersData[day] = {};
+        const dayHours: Array<{ hour: number; users: number }> = [];
         
         for (const hour of hours) {
           // Simulate hourly distribution (peak hours: 7-9 AM, 6-10 PM)
@@ -760,11 +763,19 @@ export class AdminController {
           if (hour >= 0 && hour <= 5) multiplier = 0.1; // Night low
           if (day === 'Sat' || day === 'Sun') multiplier *= 1.2; // Weekend boost
 
-          activeUsersData[day][hour.toString()] = Math.floor(baseCount * multiplier);
+          const userCount = Math.floor(baseCount * multiplier);
+          activeUsersData[day][hour.toString()] = userCount;
+          dayHours.push({ hour, users: userCount });
         }
+        
+        activeUsersArray.push({ day, hours: dayHours });
       }
 
-      return activeUsersData;
+      // Return both formats: object for compatibility, array for frontend mapping
+      return {
+        data: activeUsersData, // Object format: { Mon: { "0": 100, ... }, ... }
+        days: activeUsersArray, // Array format: [{ day: "Mon", hours: [...] }, ...]
+      };
     };
 
     try {
@@ -797,13 +808,14 @@ export class AdminController {
       }
 
       // Generate and return data
-      const activeUsersData = generateDefaultData(baseCount);
+      const result = generateDefaultData(baseCount);
       
       // Return data directly - TransformInterceptor will wrap it
-      return activeUsersData;
+      // Frontend can use result.days.map() or result.data
+      return result;
     } catch (error: any) {
       console.error('Error getting active users:', error);
-      // Return mock data on error - ensure it's always a valid object
+      // Return mock data on error - ensure it's always a valid object with array
       return generateDefaultData(1000);
     }
   }
