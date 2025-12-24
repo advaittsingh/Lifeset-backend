@@ -743,15 +743,15 @@ export class AdminController {
   @Get('ad-campaigns/active-users')
   @ApiOperation({ summary: 'Get active users by hour for each day of week' })
   async getActiveUsersByHour() {
-    // Helper function to generate default data structure as an array
-    // Frontend expects response.data to be an array that can be mapped
-    const generateDefaultData = (baseCount: number = 1000): Array<{ day: string; hours: Array<{ hour: number; users: number }> }> => {
+    // Helper function to generate default data structure as an object
+    // Frontend expects object format: { Mon: { "0": 100, "1": 100, ... }, Tue: { ... }, ... }
+    const generateDefaultData = (baseCount: number = 1000): Record<string, Record<string, number>> => {
       const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
       const hours = Array.from({ length: 24 }, (_, i) => i);
-      const activeUsersArray: Array<{ day: string; hours: Array<{ hour: number; users: number }> }> = [];
+      const activeUsersData: Record<string, Record<string, number>> = {};
 
       for (const day of days) {
-        const dayHours: Array<{ hour: number; users: number }> = [];
+        activeUsersData[day] = {};
         
         for (const hour of hours) {
           // Simulate hourly distribution (peak hours: 7-9 AM, 6-10 PM)
@@ -761,14 +761,11 @@ export class AdminController {
           if (hour >= 0 && hour <= 5) multiplier = 0.1; // Night low
           if (day === 'Sat' || day === 'Sun') multiplier *= 1.2; // Weekend boost
 
-          const userCount = Math.floor(baseCount * multiplier);
-          dayHours.push({ hour, users: userCount });
+          activeUsersData[day][hour.toString()] = Math.floor(baseCount * multiplier);
         }
-        
-        activeUsersArray.push({ day, hours: dayHours });
       }
 
-      return activeUsersArray;
+      return activeUsersData;
     };
 
     try {
@@ -800,13 +797,42 @@ export class AdminController {
         baseCount = 1000;
       }
 
-      // Generate and return data as array
-      // TransformInterceptor will wrap it: { success: true, data: [...], timestamp: "..." }
-      // Frontend can now do: response.data.map(...)
-      return generateDefaultData(baseCount);
+      // Generate and return data as object
+      // TransformInterceptor will wrap it: { success: true, data: { Mon: {...}, ... }, timestamp: "..." }
+      // Frontend expects object format where each day has hour keys "0" through "23"
+      const result = generateDefaultData(baseCount);
+      
+      // Validate that result has all required structure
+      const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+      const requiredHours = Array.from({ length: 24 }, (_, i) => i.toString());
+      
+      for (const day of days) {
+        if (!result[day] || typeof result[day] !== 'object') {
+          console.warn(`Missing or invalid data for day: ${day}, regenerating...`);
+          const tempResult = generateDefaultData(baseCount);
+          result[day] = tempResult[day];
+        }
+        
+        // Ensure all 24 hours exist as string keys
+        const dayData = result[day];
+        for (const hour of requiredHours) {
+          if (dayData[hour] === undefined || typeof dayData[hour] !== 'number') {
+            // Fill missing hours with a default value
+            dayData[hour] = Math.floor(baseCount * 0.3);
+          }
+        }
+      }
+      
+      // Final validation - ensure result is a valid object
+      if (!result || typeof result !== 'object' || Array.isArray(result)) {
+        console.error('Invalid result format, returning default data');
+        return generateDefaultData(1000);
+      }
+      
+      return result;
     } catch (error: any) {
       console.error('Error getting active users:', error);
-      // Return mock data on error - ensure it's always a valid array
+      // Return mock data on error - ensure it's always a valid object
       return generateDefaultData(1000);
     }
   }
