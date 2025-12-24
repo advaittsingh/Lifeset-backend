@@ -926,23 +926,10 @@ export class AdminController {
   @Get('ad-campaigns/active-users')
   @ApiOperation({ summary: 'Get active users by hour for each day of week' })
   async getActiveUsersByHour() {
-    try {
-      // Get active users count once (not 168 times!)
-      const baseCount = await this.prisma.user.count({
-        where: {
-          isActive: true,
-          isVerified: true,
-        },
-      }).catch((error) => {
-        console.error('Database error counting users:', error);
-        // Return default count if database query fails
-        return 1000;
-      });
-
-      // Get active users for each day of week and hour
+    // Helper function to generate default data structure
+    const generateDefaultData = (baseCount: number = 1000): Record<string, Record<string, number>> => {
       const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
       const hours = Array.from({ length: 24 }, (_, i) => i);
-      
       const activeUsersData: Record<string, Record<string, number>> = {};
 
       for (const day of days) {
@@ -960,28 +947,47 @@ export class AdminController {
         }
       }
 
+      return activeUsersData;
+    };
+
+    try {
+      // Check if prisma is available
+      if (!this.prisma) {
+        console.error('Prisma service is not available');
+        return generateDefaultData(1000);
+      }
+
+      // Get active users count once (not 168 times!)
+      let baseCount = 1000; // Default fallback value
+      
+      try {
+        baseCount = await this.prisma.user.count({
+          where: {
+            isActive: true,
+            isVerified: true,
+          },
+        });
+      } catch (dbError: any) {
+        console.error('Database error counting users:', dbError);
+        // Use default count if database query fails
+        baseCount = 1000;
+      }
+
+      // Ensure baseCount is a valid number
+      if (typeof baseCount !== 'number' || isNaN(baseCount) || baseCount < 0) {
+        console.warn('Invalid baseCount, using default:', baseCount);
+        baseCount = 1000;
+      }
+
+      // Generate and return data
+      const activeUsersData = generateDefaultData(baseCount);
+      
       // Return data directly - TransformInterceptor will wrap it
       return activeUsersData;
     } catch (error: any) {
       console.error('Error getting active users:', error);
       // Return mock data on error - ensure it's always a valid object
-      const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-      const hours = Array.from({ length: 24 }, (_, i) => i);
-      const mockData: Record<string, Record<string, number>> = {};
-      days.forEach(day => {
-        mockData[day] = {};
-        hours.forEach(hour => {
-          const base = 1000;
-          let multiplier = 0.3;
-          if (hour >= 7 && hour <= 9) multiplier = 0.8;
-          if (hour >= 18 && hour <= 22) multiplier = 1.0;
-          if (hour >= 0 && hour <= 5) multiplier = 0.1;
-          if (day === 'Sat' || day === 'Sun') multiplier *= 1.2;
-          mockData[day][hour.toString()] = Math.floor(base * multiplier);
-        });
-      });
-      // Return mock data directly - TransformInterceptor will wrap it
-      return mockData;
+      return generateDefaultData(1000);
     }
   }
 
