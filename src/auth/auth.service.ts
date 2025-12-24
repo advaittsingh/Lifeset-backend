@@ -1080,7 +1080,7 @@ export class AuthService {
     return 90 * 24 * 60 * 60 * 1000;
   }
 
-  async createSession(userId: string, token: string, refreshToken: string) {
+  async createSession(userId: string, token: string, refreshToken: string, ipAddress?: string, userAgent?: string) {
     try {
       // Set session expiration to match refresh token expiration (default: 90 days)
       const refreshExpiresIn = this.configService.get<string>('JWT_REFRESH_EXPIRES_IN', '90d');
@@ -1088,40 +1088,19 @@ export class AuthService {
       
       const expiresAt = new Date(Date.now() + expirationMs);
 
-      // Check if user has an existing non-expired session
-      const existingSession = await this.prisma.session.findFirst({
-        where: {
+      // Always create a new session to support multi-device login
+      // This allows users to be logged in on multiple devices simultaneously
+      await this.prisma.session.create({
+        data: {
           userId,
-          expiresAt: { gt: new Date() },
-        },
-        orderBy: {
-          createdAt: 'desc',
+          token,
+          refreshToken,
+          expiresAt,
+          ipAddress: ipAddress || null,
+          userAgent: userAgent || null,
         },
       });
-
-      if (existingSession) {
-        // Update existing session with new tokens
-        await this.prisma.session.update({
-          where: { id: existingSession.id },
-          data: {
-            token,
-            refreshToken,
-            expiresAt,
-          },
-        });
-        this.logger.log(`Updated existing session for user ${userId}`);
-      } else {
-        // Create new session
-        await this.prisma.session.create({
-          data: {
-            userId,
-            token,
-            refreshToken,
-            expiresAt,
-          },
-        });
-        this.logger.log(`Created new session for user ${userId}`);
-      }
+      this.logger.log(`Created new session for user ${userId} (multi-device support enabled)`);
 
       // Clean up expired sessions for this user (non-blocking)
       this.prisma.session.deleteMany({
@@ -1133,7 +1112,7 @@ export class AuthService {
         this.logger.warn(`Failed to cleanup expired sessions for user ${userId}: ${error.message}`);
       });
     } catch (error) {
-      this.logger.error(`Failed to create/update session for user ${userId}: ${error.message}`, error.stack);
+      this.logger.error(`Failed to create session for user ${userId}: ${error.message}`, error.stack);
       throw error;
     }
   }

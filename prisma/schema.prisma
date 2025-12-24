@@ -121,6 +121,7 @@ model Session {
 
   @@index([userId])
   @@index([token])
+  @@index([refreshToken])
 }
 
 model StudentProfile {

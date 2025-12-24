@@ -45,6 +45,31 @@ npm run dev
   - `feeds/` - Feed management
   - And other feature modules...
 
+## Authentication & Session Management
+
+The backend supports persistent user sessions with long-lived refresh tokens:
+
+### Token Expiration
+- **Access Tokens**: Valid for 7 days (configurable via `JWT_EXPIRES_IN` env var)
+- **Refresh Tokens**: Valid for 90 days (configurable via `JWT_REFRESH_EXPIRES_IN` env var, defaults to `'90d'`)
+
+### Session Persistence
+- Sessions are stored in the database and persist across app restarts
+- Users can be logged in on multiple devices simultaneously (multi-device support)
+- Use the `/auth/restore-session` endpoint on app startup to restore user sessions
+
+### Environment Variables
+Required authentication variables:
+- `JWT_SECRET` - Secret for signing access tokens (required)
+- `JWT_REFRESH_SECRET` - Secret for signing refresh tokens (required)
+
+Optional authentication variables:
+- `JWT_EXPIRES_IN` - Access token expiration time (default: `'7d'`)
+- `JWT_REFRESH_EXPIRES_IN` - Refresh token expiration time (default: `'90d'`)
+
+### API Documentation
+For detailed implementation guide for mobile apps, see [Session Persistence API Documentation](./docs/SESSION_PERSISTENCE_API.md).
+
 ## Notes
 
 This is a standalone version of the backend, previously part of a monorepo. All shared types have been integrated directly into `src/shared/`.
