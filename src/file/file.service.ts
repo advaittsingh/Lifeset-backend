@@ -39,6 +39,13 @@ export class FileService {
 
   async getSignedUrl(key: string, expiresIn: number = 3600) {
     const bucket = this.configService.get('S3_BUCKET_NAME');
+    const region = this.configService.get('AWS_REGION') || 'us-east-1';
+
+    // If AWS is not configured, return a public URL format
+    if (!this.configService.get('AWS_ACCESS_KEY_ID') || !bucket) {
+      // Return a constructed public URL (may not work if bucket is private)
+      return `https://${bucket || 'bucket'}.s3.${region}.amazonaws.com/${key}`;
+    }
 
     return this.s3.getSignedUrlPromise('getObject', {
       Bucket: bucket,
