@@ -927,6 +927,14 @@ export class AdminController {
   @ApiOperation({ summary: 'Get active users by hour for each day of week' })
   async getActiveUsersByHour() {
     try {
+      // Get active users count once (not 168 times!)
+      const baseCount = await this.prisma.user.count({
+        where: {
+          isActive: true,
+          isVerified: true,
+        },
+      });
+
       // Get active users for each day of week and hour
       const days = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
       const hours = Array.from({ length: 24 }, (_, i) => i);
@@ -937,26 +945,6 @@ export class AdminController {
         activeUsersData[day] = {};
         
         for (const hour of hours) {
-          // Calculate day of week (0 = Sunday, 1 = Monday, etc.)
-          const dayIndex = days.indexOf(day);
-          const today = new Date();
-          const currentDay = today.getDay();
-          const daysFromToday = (dayIndex - currentDay + 7) % 7;
-          const targetDate = new Date(today);
-          targetDate.setDate(today.getDate() + daysFromToday);
-          targetDate.setHours(hour, 0, 0, 0);
-          const nextHour = new Date(targetDate);
-          nextHour.setHours(hour + 1, 0, 0, 0);
-
-          // Get user events in this hour range (simulated based on historical data)
-          // In production, this would query actual session/activity data
-          const baseCount = await this.prisma.user.count({
-            where: {
-              isActive: true,
-              isVerified: true,
-            },
-          });
-
           // Simulate hourly distribution (peak hours: 7-9 AM, 6-10 PM)
           let multiplier = 0.3; // Base activity
           if (hour >= 7 && hour <= 9) multiplier = 0.8; // Morning peak
@@ -968,7 +956,10 @@ export class AdminController {
         }
       }
 
-      return activeUsersData;
+      return {
+        success: true,
+        data: activeUsersData,
+      };
     } catch (error: any) {
       console.error('Error getting active users:', error);
       // Return mock data on error
@@ -987,7 +978,10 @@ export class AdminController {
           mockData[day][hour.toString()] = Math.floor(base * multiplier);
         });
       });
-      return mockData;
+      return {
+        success: true,
+        data: mockData,
+      };
     }
   }
 
