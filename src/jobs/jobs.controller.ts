@@ -15,6 +15,14 @@ export class JobsController {
     return this.jobsService.getJobs(filters);
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Get('applied')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get applied jobs for current user' })
+  async getAppliedJobs(@CurrentUser() user: any, @Query() filters: any) {
+    return this.jobsService.getAppliedJobs(user.id, filters);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get job by ID' })
   async getJobById(@Param('id') id: string, @CurrentUser() user?: any) {
@@ -28,11 +36,13 @@ export class JobsController {
   async applyForJob(
     @CurrentUser() user: any,
     @Param('id') id: string,
-    @Body() data: { coverLetter?: string },
+    @Body() data?: { coverLetter?: string },
   ) {
-    // Get postId from jobPost
-    const jobPost = await this.jobsService.getJobById(id);
-    return this.jobsService.applyForJob(user.id, id, jobPost.postId, data.coverLetter);
+    // Get job details - this handles both JobPost and Post IDs
+    const job = await this.jobsService.getJobById(id);
+    // Use the job ID (which could be JobPost ID or Post ID) and the postId
+    const coverLetter = data?.coverLetter || undefined;
+    return this.jobsService.applyForJob(user.id, job.id, job.postId || job.post?.id || id, coverLetter);
   }
 
   @UseGuards(JwtAuthGuard)

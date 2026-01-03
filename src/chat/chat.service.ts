@@ -1,11 +1,26 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service';
+import { ConnectionStatus } from '@prisma/client';
 
 @Injectable()
 export class ChatService {
   constructor(private prisma: PrismaService) {}
 
   async sendMessage(senderId: string, receiverId: string, message: string, messageType: string = 'text') {
+    // Check if users are connected
+    const connection = await this.prisma.connection.findFirst({
+      where: {
+        OR: [
+          { requesterId: senderId, receiverId, status: ConnectionStatus.ACCEPTED },
+          { requesterId: receiverId, receiverId: senderId, status: ConnectionStatus.ACCEPTED },
+        ],
+      },
+    });
+
+    if (!connection) {
+      throw new ForbiddenException('Users must be connected to send messages');
+    }
+
     return this.prisma.chatMessage.create({
       data: {
         senderId,
@@ -17,6 +32,20 @@ export class ChatService {
   }
 
   async getChatHistory(userId1: string, userId2: string, limit: number = 50) {
+    // Check if users are connected
+    const connection = await this.prisma.connection.findFirst({
+      where: {
+        OR: [
+          { requesterId: userId1, receiverId: userId2, status: ConnectionStatus.ACCEPTED },
+          { requesterId: userId2, receiverId: userId1, status: ConnectionStatus.ACCEPTED },
+        ],
+      },
+    });
+
+    if (!connection) {
+      throw new ForbiddenException('Users must be connected to view chat history');
+    }
+
     return this.prisma.chatMessage.findMany({
       where: {
         OR: [
@@ -26,6 +55,22 @@ export class ChatService {
       },
       orderBy: { createdAt: 'desc' },
       take: limit,
+      include: {
+        sender: {
+          select: {
+            id: true,
+            email: true,
+            profileImage: true,
+          },
+        },
+        receiver: {
+          select: {
+            id: true,
+            email: true,
+            profileImage: true,
+          },
+        },
+      },
     });
   }
 

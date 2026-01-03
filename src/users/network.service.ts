@@ -143,6 +143,10 @@ export class NetworkService {
           include: {
             college: true,
             course: true,
+            experiences: {
+              orderBy: { startMonthYear: 'desc' },
+              take: 5, // Get latest 5 experiences
+            },
           },
         },
       },
@@ -152,15 +156,138 @@ export class NetworkService {
       return null;
     }
 
+    const studentProfile = user.studentProfile;
+    
+    // Get skills (combine technical and soft skills)
+    const technicalSkills = studentProfile?.technicalSkills || [];
+    const softSkills = studentProfile?.softSkills || [];
+    const allSkills = [...technicalSkills, ...softSkills];
+    
+    // Get interests/hobbies
+    const interests = studentProfile?.interestHobbies || [];
+    
+    // Format experiences
+    const experiences = (studentProfile?.experiences || []).map((exp: any) => ({
+      companyName: exp.companyName || '',
+      designation: exp.designation || '',
+      location: exp.location || '',
+      startMonthYear: exp.startMonthYear || '',
+      endMonthYear: exp.endMonthYear || '',
+      currentlyWorking: exp.currentlyWorking || false,
+      aboutRole: exp.aboutRole || '',
+    }));
+
     return {
       userId: user.id,
-      name: user.studentProfile
-        ? `${user.studentProfile.firstName} ${user.studentProfile.lastName}`
+      name: studentProfile
+        ? `${studentProfile.firstName || ''} ${studentProfile.lastName || ''}`.trim()
         : user.email || user.mobile,
-      profileImage: user.profileImage || user.studentProfile?.profileImage,
-      college: user.studentProfile?.college?.name,
-      course: user.studentProfile?.course?.name,
+      profileImage: user.profileImage || studentProfile?.profileImage || studentProfile?.profilePicture,
+      college: studentProfile?.college?.name,
+      course: studentProfile?.course?.name,
+      skills: allSkills,
+      interests: interests,
+      experiences: experiences,
       qrCode: `lifeset://user/${user.id}`,
+    };
+  }
+
+  async getAllUsers(currentUserId: string, filters?: any) {
+    const where: any = {
+      id: { not: currentUserId }, // Exclude current user
+      isActive: true,
+    };
+
+    // Always exclude ADMIN users from networking (unless explicitly filtering for ADMIN)
+    if (filters?.userType === 'ADMIN') {
+      // Only include ADMIN if explicitly requested
+      where.userType = 'ADMIN';
+    } else {
+      // Exclude ADMIN users in all other cases
+      where.userType = { not: 'ADMIN' };
+      
+      // If a specific userType filter is provided (and it's not ADMIN), apply it
+      if (filters?.userType && filters.userType !== 'ADMIN') {
+        where.userType = filters.userType;
+      }
+    }
+
+    if (filters?.search) {
+      where.OR = [
+        { email: { contains: filters.search, mode: 'insensitive' } },
+        { mobile: { contains: filters.search, mode: 'insensitive' } },
+      ];
+    }
+
+    const page = parseInt(String(filters?.page || 1), 10);
+    const limit = parseInt(String(filters?.limit || 50), 10);
+    const skip = (page - 1) * limit;
+
+    const [users, total] = await Promise.all([
+      this.prisma.user.findMany({
+        where,
+        include: {
+          studentProfile: {
+            select: {
+              firstName: true,
+              lastName: true,
+              profileImage: true,
+              profilePicture: true,
+              technicalSkills: true,
+              softSkills: true,
+              interestHobbies: true,
+              college: {
+                select: {
+                  name: true,
+                },
+              },
+              course: {
+                select: {
+                  name: true,
+                },
+              },
+            },
+          },
+        },
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.user.count({ where }),
+    ]);
+
+    // Get connection status for each user
+    const userIds = users.map(u => u.id);
+    const connections = await this.prisma.connection.findMany({
+      where: {
+        OR: [
+          { requesterId: currentUserId, receiverId: { in: userIds } },
+          { receiverId: currentUserId, requesterId: { in: userIds } },
+        ],
+      },
+    });
+
+    const connectionMap = new Map();
+    connections.forEach(conn => {
+      const otherUserId = conn.requesterId === currentUserId ? conn.receiverId : conn.requesterId;
+      connectionMap.set(otherUserId, {
+        id: conn.id,
+        status: conn.status,
+        isRequester: conn.requesterId === currentUserId,
+      });
+    });
+
+    return {
+      data: users.map(user => ({
+        ...user,
+        connection: connectionMap.get(user.id) || null,
+      })),
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
     };
   }
 }

@@ -185,6 +185,30 @@ export class CmsAdminController {
     return this.cmsAdminService.getGovtVacancies(filters);
   }
 
+  @Get('govt-vacancies/:id')
+  @ApiOperation({ summary: 'Get government vacancy by ID (Admin)' })
+  async getGovtVacancyById(@Param('id') id: string) {
+    return this.cmsAdminService.getGovtVacancyById(id);
+  }
+
+  @Post('govt-vacancies')
+  @ApiOperation({ summary: 'Create government vacancy (Admin)' })
+  async createGovtVacancy(@CurrentUser() user: any, @Body() data: any) {
+    return this.cmsAdminService.createGovtVacancy(data, user.id);
+  }
+
+  @Put('govt-vacancies/:id')
+  @ApiOperation({ summary: 'Update government vacancy (Admin)' })
+  async updateGovtVacancy(@Param('id') id: string, @Body() data: any) {
+    return this.cmsAdminService.updateGovtVacancy(id, data);
+  }
+
+  @Delete('govt-vacancies/:id')
+  @ApiOperation({ summary: 'Delete government vacancy (Admin)' })
+  async deleteGovtVacancy(@Param('id') id: string) {
+    return this.cmsAdminService.deleteGovtVacancy(id);
+  }
+
   // ========== Jobs ==========
   @Get('jobs')
   @ApiOperation({ summary: 'Get all jobs (Admin)' })

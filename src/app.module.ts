@@ -25,6 +25,8 @@ import { FileModule } from './file/file.module';
 import { AdminModule } from './admin/admin.module';
 import { MonitoringModule } from './monitoring/monitoring.module';
 import { SkillTrainingModule } from './skill-training/skill-training.module';
+import { HealthModule } from './health/health.module';
+import { AppConfigModule } from './app-config/app-config.module';
 import { PrismaModule } from './common/prisma/prisma.module';
 import { RedisModule } from './common/redis/redis.module';
 
@@ -64,6 +66,8 @@ import { RedisModule } from './common/redis/redis.module';
     AdminModule,
     MonitoringModule,
     SkillTrainingModule,
+    HealthModule,
+    AppConfigModule,
   ],
 })
 export class AppModule {}

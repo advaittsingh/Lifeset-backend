@@ -1,0 +1,93 @@
+{
+  "family": "lifeset-backend",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "REPLACE_WITH_TASK_EXECUTION_ROLE_ARN",
+  "taskRoleArn": "REPLACE_WITH_TASK_ROLE_ARN",
+  "containerDefinitions": [
+    {
+      "name": "lifeset-backend",
+      "image": "REPLACE_WITH_ECR_IMAGE_URI",
+      "essential": true,
+      "portMappings": [
+        {
+          "containerPort": 3000,
+          "protocol": "tcp"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "DATABASE_URL",
+          "valueFrom": "REPLACE_WITH_SECRETS_MANAGER_ARN:DATABASE_URL::"
+        },
+        {
+          "name": "REDIS_URL",
+          "valueFrom": "REPLACE_WITH_SECRETS_MANAGER_ARN:REDIS_URL::"
+        },
+        {
+          "name": "JWT_SECRET",
+          "valueFrom": "REPLACE_WITH_SECRETS_MANAGER_ARN:JWT_SECRET::"
+        },
+        {
+          "name": "JWT_REFRESH_SECRET",
+          "valueFrom": "REPLACE_WITH_SECRETS_MANAGER_ARN:JWT_REFRESH_SECRET::"
+        },
+        {
+          "name": "AWS_ACCESS_KEY_ID",
+          "valueFrom": "REPLACE_WITH_SECRETS_MANAGER_ARN:AWS_ACCESS_KEY_ID::"
+        },
+        {
+          "name": "AWS_SECRET_ACCESS_KEY",
+          "valueFrom": "REPLACE_WITH_SECRETS_MANAGER_ARN:AWS_SECRET_ACCESS_KEY::"
+        },
+        {
+          "name": "S3_BUCKET_NAME",
+          "valueFrom": "REPLACE_WITH_SECRETS_MANAGER_ARN:S3_BUCKET_NAME::"
+        }
+      ],
+      "environment": [
+        {
+          "name": "NODE_ENV",
+          "value": "production"
+        },
+        {
+          "name": "PORT",
+          "value": "3000"
+        },
+        {
+          "name": "API_PREFIX",
+          "value": "/api/v1"
+        },
+        {
+          "name": "CORS_ORIGIN",
+          "value": "REPLACE_WITH_CORS_ORIGIN"
+        },
+        {
+          "name": "AWS_REGION",
+          "value": "ap-south-1"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/lifeset-production",
+          "awslogs-region": "ap-south-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "healthCheck": {
+        "command": [
+          "CMD-SHELL",
+          "curl -f http://localhost:3000/api/v1/health || exit 1"
+        ],
+        "interval": 30,
+        "timeout": 5,
+        "retries": 3,
+        "startPeriod": 60
+      }
+    }
+  ]
+}
+

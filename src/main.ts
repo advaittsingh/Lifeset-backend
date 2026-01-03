@@ -22,6 +22,10 @@ async function bootstrap() {
   expressApp.use(express.json({ limit: '50mb' }));
   expressApp.use(express.urlencoded({ limit: '50mb', extended: true }));
 
+  // Configure multipart/form-data handling for file uploads
+  // Note: Multer handles multipart/form-data, but we need to ensure body parser doesn't interfere
+  // The FileInterceptor from NestJS will handle multipart/form-data parsing
+
   // Security
   app.use(helmet({
     crossOriginResourcePolicy: { policy: "cross-origin" },
@@ -48,12 +52,45 @@ async function bootstrap() {
   // Allow all origins in development, or specific origins in production
   const isDevelopment = process.env.NODE_ENV !== 'production';
   
+  // Log CORS configuration for debugging
+  console.log('CORS Configuration:', {
+    isDevelopment,
+    corsOrigins,
+    nodeEnv: process.env.NODE_ENV,
+  });
+  
   app.enableCors({
-    origin: isDevelopment ? true : corsOrigins, // Allow all origins in dev, specific in prod
+    origin: (origin, callback) => {
+      // Log all CORS requests for debugging
+      console.log('CORS Request:', {
+        origin,
+        allowedOrigins: corsOrigins,
+        isDevelopment,
+      });
+      
+      // In development, allow all origins
+      if (isDevelopment) {
+        callback(null, true);
+        return;
+      }
+      
+      // In production, check against allowed origins
+      // Also allow requests without origin (e.g., Postman, curl, mobile apps)
+      if (!origin || corsOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        console.warn('CORS blocked origin:', origin);
+        callback(new Error('Not allowed by CORS'));
+      }
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'LYFSET', 'x-api-key', 'api-key'],
+    // Allow Content-Type header for file uploads (multipart/form-data)
+    // Don't restrict Content-Type to allow multipart/form-data with boundary
+    allowedHeaders: ['Content-Type', 'Authorization', 'LYFSET', 'x-api-key', 'api-key', 'Accept'],
     exposedHeaders: ['Content-Type', 'Authorization'],
+    // Increase max age for preflight requests
+    maxAge: 86400, // 24 hours
   });
 
   // Global prefix

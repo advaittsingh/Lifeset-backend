@@ -186,6 +186,153 @@ export class ReferralService {
     return updated;
   }
 
+  async getAnalytics() {
+    // Total referrals
+    const totalReferrals = await this.prisma.referral.count();
+    
+    // Completed referrals
+    const completedReferrals = await this.prisma.referral.count({
+      where: { status: 'COMPLETED' },
+    });
+    
+    // Pending referrals
+    const pendingReferrals = await this.prisma.referral.count({
+      where: { status: 'PENDING' },
+    });
+    
+    // Unique referrers
+    const uniqueReferrers = await this.prisma.referral.groupBy({
+      by: ['referrerId'],
+    });
+    
+    // Referrals by date (last 30 days)
+    const thirtyDaysAgo = new Date();
+    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    
+    const recentReferrals = await this.prisma.referral.findMany({
+      where: {
+        createdAt: {
+          gte: thirtyDaysAgo,
+        },
+      },
+      select: {
+        createdAt: true,
+      },
+    });
+    
+    // Group by date (day level)
+    const referralsByDateMap = new Map<string, number>();
+    recentReferrals.forEach((ref) => {
+      const dateKey = ref.createdAt.toISOString().split('T')[0];
+      referralsByDateMap.set(dateKey, (referralsByDateMap.get(dateKey) || 0) + 1);
+    });
+    
+    const referralsByDate = Array.from(referralsByDateMap.entries()).map(([date, count]) => ({
+      date: new Date(date),
+      count,
+    })).sort((a, b) => a.date.getTime() - b.date.getTime());
+    
+    // Top 10 referrers
+    const topReferrers = await this.prisma.referral.groupBy({
+      by: ['referrerId'],
+      where: {
+        status: 'COMPLETED',
+      },
+      _count: {
+        id: true,
+      },
+      orderBy: {
+        _count: {
+          id: 'desc',
+        },
+      },
+      take: 10,
+    });
+    
+    const referrerIds = topReferrers.map((r) => r.referrerId);
+    const referrers = await this.prisma.user.findMany({
+      where: { id: { in: referrerIds } },
+      select: {
+        id: true,
+        email: true,
+        mobile: true,
+        studentProfile: {
+          select: {
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+    });
+    
+    const topReferrersWithDetails = topReferrers.map((ref) => {
+      const user = referrers.find((u) => u.id === ref.referrerId);
+      return {
+        userId: ref.referrerId,
+        user: user || null,
+        referralCount: ref._count.id,
+      };
+    });
+
+    // Recent referrals (last 50)
+    const recentReferralsList = await this.prisma.referral.findMany({
+      take: 50,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        referrer: {
+          select: {
+            id: true,
+            email: true,
+            mobile: true,
+            studentProfile: {
+              select: {
+                firstName: true,
+                lastName: true,
+              },
+            },
+          },
+        },
+        referred: {
+          select: {
+            id: true,
+            email: true,
+            mobile: true,
+            studentProfile: {
+              select: {
+                firstName: true,
+                lastName: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    // Referral codes usage stats
+    const totalUsersWithReferralCodes = await this.prisma.user.count({
+      where: {
+        referralCode: { not: null },
+      },
+    });
+
+    // Conversion rate (completed / total)
+    const conversionRate = totalReferrals > 0 
+      ? ((completedReferrals / totalReferrals) * 100).toFixed(2)
+      : '0.00';
+    
+    return {
+      totalReferrals,
+      completedReferrals,
+      pendingReferrals,
+      uniqueReferrers: uniqueReferrers.length,
+      topReferrers: topReferrersWithDetails,
+      referralsByDate,
+      recentReferrals: recentReferralsList,
+      totalUsersWithReferralCodes,
+      conversionRate: parseFloat(conversionRate),
+    };
+  }
+
   private generateReferralCode(userId: string): string {
     // Generate a unique referral code
     const prefix = 'LS';

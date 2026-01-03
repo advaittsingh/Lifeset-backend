@@ -2,6 +2,9 @@ import { Controller, Get, Post, Body, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth } from '@nestjs/swagger';
 import { ReferralService } from './referral.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../common/guards/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
+import { UserType } from '@/shared';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { Public } from '../common/decorators/public.decorator';
 
@@ -61,6 +64,15 @@ export class ReferralController {
   @ApiOperation({ summary: 'Get referral leaderboard' })
   async getLeaderboard(@Query('limit') limit?: number) {
     return this.referralService.getLeaderboard(limit ? parseInt(limit.toString()) : 10);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserType.ADMIN)
+  @Get('analytics')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get referral analytics (admin only)' })
+  async getAnalytics() {
+    return this.referralService.getAnalytics();
   }
 }
 

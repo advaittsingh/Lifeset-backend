@@ -20,11 +20,16 @@ import Redis from 'ioredis';
         
         if (redisUrl) {
           // Parse Redis URL
-          // rediss://default:password@host:port or redis://default:password@host:port
-          const urlMatch = redisUrl.match(/^(rediss?):\/\/(?:[^:]+:)?([^@]+)@([^:]+):(\d+)$/);
+          // Supports formats:
+          // - redis://host:port (no password)
+          // - redis://password@host:port
+          // - redis://user:password@host:port
+          // - rediss://host:port (TLS, no password)
+          // - rediss://password@host:port (TLS with password)
+          const urlMatch = redisUrl.match(/^(rediss?):\/\/(?:([^:@]+)(?::([^@]+))?@)?([^:]+):(\d+)$/);
           
           if (urlMatch) {
-            const [, protocol, password, host, port] = urlMatch;
+            const [, protocol, username, password, host, port] = urlMatch;
             redisConfig = {
               host,
               port: Number(port),
@@ -38,7 +43,7 @@ import Redis from 'ioredis';
               enableReadyCheck: true,
               lazyConnect: true,
             };
-            logger.log(`Using Redis URL connection: ${host}:${port} (TLS: ${protocol === 'rediss'})`);
+            logger.log(`Using Redis URL connection: ${host}:${port} (TLS: ${protocol === 'rediss'}, Password: ${password ? 'Yes' : 'No'})`);
           } else {
             logger.warn(`Invalid Redis URL format: ${redisUrl}. Falling back to host/port configuration.`);
             // Fall back to host/port configuration

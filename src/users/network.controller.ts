@@ -55,5 +55,11 @@ export class NetworkController {
   async getMyCard(@CurrentUser() user: any) {
     return this.networkService.generateUserCard(user.id);
   }
+
+  @Get('users')
+  @ApiOperation({ summary: 'Get all users for networking (excluding current user)' })
+  async getAllUsers(@CurrentUser() user: any, @Query() filters: any) {
+    return this.networkService.getAllUsers(user.id, filters);
+  }
 }
 

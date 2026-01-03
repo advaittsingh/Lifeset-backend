@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 import { UserType } from '@/shared';
@@ -26,6 +26,15 @@ export class InstitutesAdminService {
   }
 
   async deleteCourseCategory(id: string) {
+    // Check if course category has awardeds
+    const awardedCount = await this.prisma.awarded.count({
+      where: { courseCategoryId: id },
+    });
+
+    if (awardedCount > 0) {
+      throw new ConflictException(`Cannot delete course category: it has ${awardedCount} award(s) tagged with it. Please delete or reassign the awards first.`);
+    }
+
     return this.prisma.courseCategory.delete({ where: { id } });
   }
 
@@ -62,6 +71,29 @@ export class InstitutesAdminService {
   }
 
   async deleteAwarded(id: string) {
+    // Check if awarded has specialisations
+    const specialisationCount = await this.prisma.specialisation.count({
+      where: { awardedId: id },
+    });
+
+    if (specialisationCount > 0) {
+      throw new ConflictException(`Cannot delete award: it has ${specialisationCount} specialisation(s) tagged with it. Please delete or reassign the specialisations first.`);
+    }
+
+    // Check if awarded has courses (via specialisations - courses are linked to specialisations, not directly to awarded)
+    // But we should check if any course is linked through specialisations
+    const coursesCount = await this.prisma.course.count({
+      where: {
+        specialisation: {
+          awardedId: id,
+        },
+      },
+    });
+
+    if (coursesCount > 0) {
+      throw new ConflictException(`Cannot delete award: it has ${coursesCount} course(s) tagged with it through specialisations. Please delete or reassign the courses first.`);
+    }
+
     return this.prisma.awarded.delete({ where: { id } });
   }
 
@@ -99,6 +131,15 @@ export class InstitutesAdminService {
   }
 
   async deleteSpecialisation(id: string) {
+    // Check if specialisation has courses
+    const coursesCount = await this.prisma.course.count({
+      where: { specialisationId: id },
+    });
+
+    if (coursesCount > 0) {
+      throw new ConflictException(`Cannot delete specialisation: it has ${coursesCount} course(s) tagged with it. Please delete or reassign the courses first.`);
+    }
+
     return this.prisma.specialisation.delete({ where: { id } });
   }
 

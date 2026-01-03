@@ -30,6 +30,14 @@ export class ProfilesService {
         throw new NotFoundException('User not found');
       }
 
+      // Transform response to include compatibility fields for mobile app
+      if (user.studentProfile) {
+        // Map preferredLanguage to languageKnown for compatibility
+        (user.studentProfile as any).languageKnown = user.studentProfile.preferredLanguage || '';
+        // Map experiences relation to experience array for compatibility
+        (user.studentProfile as any).experience = user.studentProfile.experiences || [];
+      }
+      
       // Return user with studentProfile (preferredLanguage and userStatus are now in schema)
       return user;
     } catch (error: any) {
@@ -200,8 +208,87 @@ export class ProfilesService {
           experience: 0,
           introVideo: 0,
         },
+        // Required fields check for networking
+        isComplete: false,
+        missingFields: {
+          personalInfo: true,
+          address: true,
+          education: true,
+        },
       };
     }
+
+    // Check required fields for networking (personal info, address, education)
+    // Helper to safely trim strings
+    const safeTrim = (val: any): string => {
+      if (!val) return '';
+      if (typeof val === 'string') return val.trim();
+      return String(val).trim();
+    };
+    
+    const personalInfoComplete = !!(
+      safeTrim(profile.firstName) &&
+      safeTrim(profile.lastName) &&
+      profile.dateOfBirth &&
+      safeTrim(profile.gender)
+    );
+
+    const addressComplete = !!(
+      safeTrim(profile.address) &&
+      safeTrim(profile.city) &&
+      safeTrim(profile.state) &&
+      safeTrim(profile.pincode)
+    );
+
+    // Check if any education field has data
+    // Education fields are JSON, so they might be objects, strings, or null
+    const checkEducationField = (field: any): boolean => {
+      if (!field) return false;
+      if (typeof field === 'string') {
+        try {
+          const parsed = JSON.parse(field);
+          return typeof parsed === 'object' && Object.keys(parsed).length > 0;
+        } catch {
+          return field.trim().length > 0;
+        }
+      }
+      if (typeof field === 'object') {
+        // Check if it's an empty object
+        if (Object.keys(field).length === 0) return false;
+        // Check if any value is non-empty
+        return Object.values(field).some((val: any) => {
+          if (val === null || val === undefined) return false;
+          if (typeof val === 'string') return val.trim().length > 0;
+          return true;
+        });
+      }
+      return false;
+    };
+    
+    const hasEducation10th = checkEducationField(profile.education10th);
+    const hasEducation12th = checkEducationField(profile.education12th);
+    const hasGraduation = checkEducationField(profile.graduation);
+    const hasPostGraduation = checkEducationField(profile.postGraduation);
+    const educationComplete = !!(hasEducation10th || hasEducation12th || hasGraduation || hasPostGraduation);
+    
+    // Log for debugging
+    this.logger.log(`Profile completion check for user ${userId}:`, {
+      personalInfoComplete,
+      addressComplete,
+      educationComplete,
+      hasEducation10th,
+      hasEducation12th,
+      hasGraduation,
+      hasPostGraduation,
+      firstName: profile.firstName,
+      lastName: profile.lastName,
+      dateOfBirth: profile.dateOfBirth,
+      gender: profile.gender,
+      address: profile.address,
+      city: profile.city,
+      state: profile.state,
+      pincode: profile.pincode,
+    });
 
     // Calculate individual section completion percentages
     const sections = {
@@ -225,10 +312,19 @@ export class ProfilesService {
       introVideo: profile.introVideo ? 100 : 0,
     };
 
+    const isComplete = personalInfoComplete && addressComplete && educationComplete;
+
     return {
       completion: profile.profileScore || 0,
       score: profile.profileScore || 0,
       sections,
+      // Required fields check for networking
+      isComplete,
+      missingFields: {
+        personalInfo: !personalInfoComplete,
+        address: !addressComplete,
+        education: !educationComplete,
+      },
     };
   }
 
@@ -314,11 +410,12 @@ export class ProfilesService {
     
     // Map languageKnown to preferredLanguage (if provided)
     // Also allow preferredLanguage to be set directly
+    // Preserve empty strings - don't convert to null
     if (data.languageKnown !== undefined) {
-      updateData.preferredLanguage = data.languageKnown || null;
+      updateData.preferredLanguage = data.languageKnown === '' ? '' : (data.languageKnown || null);
     } else if (data.preferredLanguage !== undefined) {
       // Allow preferredLanguage to be set directly as well
-      updateData.preferredLanguage = data.preferredLanguage || null;
+      updateData.preferredLanguage = data.preferredLanguage === '' ? '' : (data.preferredLanguage || null);
     }
 
     // Process all fields from the original data object
@@ -437,7 +534,21 @@ export class ProfilesService {
     const projectsToCreate = projects || data.projects;
 
     // Handle experience if provided - store in Experience table (support both 'experience' and 'experiences')
+    // Check all possible field names to ensure experience is captured
     const experiencesToCreate = experience || experiences || data.experience || data.experiences;
+    
+    // Log experience data for debugging
+    if (experiencesToCreate !== undefined) {
+      this.logger.log(`🔍 Experience data received in updateStudentProfile`, {
+        userId,
+        hasExperience: !!experience,
+        hasExperiences: !!experiences,
+        hasDataExperience: !!data.experience,
+        hasDataExperiences: !!data.experiences,
+        experienceCount: Array.isArray(experiencesToCreate) ? experiencesToCreate.length : 'not an array',
+        experienceType: typeof experiencesToCreate,
+      });
+    }
 
     // Use upsert to create profile if it doesn't exist, or update if it does
     // Only include fields that are actually provided (partial save support)
@@ -755,13 +866,23 @@ export class ProfilesService {
     await this.calculateProfileScore(userId);
 
     // Return updated profile with relations
-    return this.prisma.studentProfile.findUnique({
+    const updatedProfile = await this.prisma.studentProfile.findUnique({
       where: { id: updated.id },
       include: {
         projects: true,
         experiences: true,
       },
     });
+
+    // Transform response to include compatibility fields for mobile app
+    if (updatedProfile) {
+      // Map preferredLanguage to languageKnown for compatibility
+      (updatedProfile as any).languageKnown = updatedProfile.preferredLanguage || '';
+      // Map experiences relation to experience array for compatibility
+      (updatedProfile as any).experience = updatedProfile.experiences || [];
+    }
+
+    return updatedProfile;
   }
 
   async updatePreferences(userId: string, data: { preferredLanguage?: string; userStatus?: 'school' | 'college' | 'working_professional' }): Promise<{ success: boolean; data: any }> {

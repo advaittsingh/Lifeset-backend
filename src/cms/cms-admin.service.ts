@@ -37,16 +37,11 @@ export class CmsAdminService {
   }
 
   async createCurrentAffair(data: any, userId: string) {
-    // Validate description word count (max 60 words) - HTML tags are stripped automatically
-    if (data.description) {
-      const wordCount = countWords(data.description);
-      if (wordCount > 60) {
-        throw new BadRequestException('Description must be 60 words or less (HTML tags are not counted)');
-      }
-    }
-
     // Set isActive based on isPublished: if published, make it active immediately
     const isActive = data.isPublished === true ? true : (data.isActive !== undefined ? data.isActive : true);
+    
+    // No word limit validation - description can be any length
+    // HTML tags are preserved in the description field
     
     // Create the post with basic fields
     const post = await this.prisma.post.create({
@@ -113,14 +108,6 @@ export class CmsAdminService {
   }
 
   async updateCurrentAffair(id: string, data: any) {
-    // Validate description word count if provided (max 60 words) - HTML tags are stripped automatically
-    if (data.description) {
-      const wordCount = countWords(data.description);
-      if (wordCount > 60) {
-        throw new BadRequestException('Description must be 60 words or less (HTML tags are not counted)');
-      }
-    }
-
     // Get existing post to preserve metadata
     const existingPost = await this.prisma.post.findUnique({
       where: { id },
@@ -244,16 +231,11 @@ export class CmsAdminService {
   }
 
   async createGeneralKnowledge(data: any, userId: string) {
-    // Validate description word count (max 60 words) - HTML tags are stripped automatically
-    if (data.description) {
-      const wordCount = countWords(data.description);
-      if (wordCount > 60) {
-        throw new BadRequestException('Description must be 60 words or less (HTML tags are not counted)');
-      }
-    }
-
     // Set isActive based on isPublished: if published, make it active immediately
     const isActive = data.isPublished === true ? true : (data.isActive !== undefined ? data.isActive : true);
+    
+    // No word limit validation - description can be any length
+    // HTML tags are preserved in the description field
     
     // Create the post with basic fields
     const post = await this.prisma.post.create({
@@ -299,14 +281,6 @@ export class CmsAdminService {
   }
 
   async updateGeneralKnowledge(id: string, data: any) {
-    // Validate description word count if provided (max 60 words) - HTML tags are stripped automatically
-    if (data.description) {
-      const wordCount = countWords(data.description);
-      if (wordCount > 60) {
-        throw new BadRequestException('Description must be 60 words or less (HTML tags are not counted)');
-      }
-    }
-
     // Get existing post to preserve metadata
     const existingPost = await this.prisma.post.findUnique({
       where: { id },
@@ -703,21 +677,165 @@ export class CmsAdminService {
 
   // ========== Govt Vacancies ==========
   async getGovtVacancies(filters?: any) {
-    const where: any = { postType: 'JOB' };
+    const where: any = { postType: 'GOVT_JOB' };
     if (filters?.search) {
       where.OR = [
         { title: { contains: filters.search, mode: 'insensitive' } },
         { description: { contains: filters.search, mode: 'insensitive' } },
       ];
     }
+    // Default to showing only active posts unless explicitly filtered
+    if (filters?.isActive !== undefined) {
+      where.isActive = filters.isActive === 'true';
+    } else {
+      where.isActive = true;
+    }
 
-    return this.prisma.jobPost.findMany({
+    return this.prisma.post.findMany({
       where,
-      include: {
-        post: { include: { user: true } },
-        company: true,
-      },
+      include: { user: true, category: true },
       orderBy: { createdAt: 'desc' },
+      skip: filters?.page ? (parseInt(String(filters.page), 10) - 1) * parseInt(String(filters.limit || 20), 10) : 0,
+      take: parseInt(String(filters?.limit || 20), 10),
+    });
+  }
+
+  async createGovtVacancy(data: any, userId: string) {
+    const isActive = data.isPublished === true ? true : (data.isActive !== undefined ? data.isActive : true);
+    
+    const post = await this.prisma.post.create({
+      data: {
+        userId,
+        title: data.nameOfPost || data.title,
+        description: data.description,
+        postType: 'GOVT_JOB',
+        categoryId: data.mainCourseCategoryId || data.categoryId,
+        images: data.images || data.organisationImage ? [data.organisationImage || data.images?.[0]] : [],
+        isActive,
+        metadata: {
+          contentLanguage: data.contentLanguage,
+          mainCourseCategoryId: data.mainCourseCategoryId,
+          awardCategoryId: data.awardCategoryId,
+          specialisationCategoryId: data.specialisationCategoryId,
+          examLevel: data.examLevel,
+          examName: data.examName,
+          organisationImage: data.organisationImage || data.images?.[0],
+          nameOfPost: data.nameOfPost,
+          firstAnnouncementDate: data.firstAnnouncementDate,
+          applicationSubmissionLastDate: data.applicationSubmissionLastDate,
+          examDate: data.examDate,
+          examFees: data.examFees,
+          vacanciesSeat: data.vacanciesSeat,
+          evaluationExamPattern: data.evaluationExamPattern,
+          cutoff: data.cutoff,
+          eligibility: data.eligibility,
+          ageLimit: data.ageLimit,
+          isPublished: data.isPublished,
+        },
+      },
+    });
+
+    return post;
+  }
+
+  async getGovtVacancyById(id: string) {
+    const post = await this.prisma.post.findUnique({
+      where: { id, postType: 'GOVT_JOB' },
+      include: { 
+        user: true, 
+        category: true,
+      },
+    });
+
+    if (!post) {
+      throw new NotFoundException('Government vacancy not found');
+    }
+
+    // Return post with metadata fields extracted
+    const metadata = post.metadata as any || {};
+    return {
+      ...post,
+      isPublished: metadata.isPublished !== undefined ? metadata.isPublished : post.isActive,
+      contentLanguage: metadata.contentLanguage,
+      mainCourseCategoryId: metadata.mainCourseCategoryId,
+      awardCategoryId: metadata.awardCategoryId,
+      specialisationCategoryId: metadata.specialisationCategoryId,
+      examLevel: metadata.examLevel,
+      examName: metadata.examName,
+      organisationImageUrl: metadata.organisationImage,
+      organisationImage: metadata.organisationImage,
+      nameOfPost: metadata.nameOfPost || post.title,
+      firstAnnouncementDate: metadata.firstAnnouncementDate,
+      applicationSubmissionLastDate: metadata.applicationSubmissionLastDate,
+      examDate: metadata.examDate,
+      examFees: metadata.examFees,
+      vacanciesSeat: metadata.vacanciesSeat,
+      evaluationExamPattern: metadata.evaluationExamPattern,
+      cutoff: metadata.cutoff,
+      eligibility: metadata.eligibility,
+      ageLimit: metadata.ageLimit,
+    };
+  }
+
+  async updateGovtVacancy(id: string, data: any) {
+    const existingPost = await this.prisma.post.findUnique({
+      where: { id },
+      select: { metadata: true },
+    });
+
+    if (!existingPost) {
+      throw new NotFoundException('Government vacancy not found');
+    }
+
+    const existingMetadata = (existingPost?.metadata as any) || {};
+    const imageUrl = data.organisationImage || data.images?.[0];
+
+    const updateData: any = {
+      title: data.nameOfPost || data.title,
+      description: data.description,
+      categoryId: data.mainCourseCategoryId || data.categoryId,
+      images: imageUrl ? [imageUrl] : data.images,
+      isActive: data.isActive,
+      metadata: {
+        ...existingMetadata,
+        contentLanguage: data.contentLanguage !== undefined ? data.contentLanguage : existingMetadata.contentLanguage,
+        mainCourseCategoryId: data.mainCourseCategoryId !== undefined ? data.mainCourseCategoryId : existingMetadata.mainCourseCategoryId,
+        awardCategoryId: data.awardCategoryId !== undefined ? data.awardCategoryId : existingMetadata.awardCategoryId,
+        specialisationCategoryId: data.specialisationCategoryId !== undefined ? data.specialisationCategoryId : existingMetadata.specialisationCategoryId,
+        examLevel: data.examLevel !== undefined ? data.examLevel : existingMetadata.examLevel,
+        examName: data.examName !== undefined ? data.examName : existingMetadata.examName,
+        organisationImage: imageUrl || existingMetadata.organisationImage,
+        nameOfPost: data.nameOfPost !== undefined ? data.nameOfPost : existingMetadata.nameOfPost,
+        firstAnnouncementDate: data.firstAnnouncementDate !== undefined ? data.firstAnnouncementDate : existingMetadata.firstAnnouncementDate,
+        applicationSubmissionLastDate: data.applicationSubmissionLastDate !== undefined ? data.applicationSubmissionLastDate : existingMetadata.applicationSubmissionLastDate,
+        examDate: data.examDate !== undefined ? data.examDate : existingMetadata.examDate,
+        examFees: data.examFees !== undefined ? data.examFees : existingMetadata.examFees,
+        vacanciesSeat: data.vacanciesSeat !== undefined ? data.vacanciesSeat : existingMetadata.vacanciesSeat,
+        evaluationExamPattern: data.evaluationExamPattern !== undefined ? data.evaluationExamPattern : existingMetadata.evaluationExamPattern,
+        cutoff: data.cutoff !== undefined ? data.cutoff : existingMetadata.cutoff,
+        eligibility: data.eligibility !== undefined ? data.eligibility : existingMetadata.eligibility,
+        ageLimit: data.ageLimit !== undefined ? data.ageLimit : existingMetadata.ageLimit,
+        isPublished: data.isPublished !== undefined ? data.isPublished : existingMetadata.isPublished,
+      },
+    };
+
+    return this.prisma.post.update({
+      where: { id },
+      data: updateData,
+    });
+  }
+
+  async deleteGovtVacancy(id: string) {
+    const post = await this.prisma.post.findUnique({
+      where: { id, postType: 'GOVT_JOB' },
+    });
+
+    if (!post) {
+      throw new NotFoundException('Government vacancy not found');
+    }
+
+    return this.prisma.post.delete({
+      where: { id },
     });
   }
 
@@ -925,6 +1043,15 @@ export class CmsAdminService {
   }
 
   async deleteInstitute(id: string) {
+    // Check if institute has students
+    const studentCount = await this.prisma.studentProfile.count({
+      where: { collegeId: id },
+    });
+
+    if (studentCount > 0) {
+      throw new ConflictException(`Cannot delete institute: it has ${studentCount} student(s) tagged with it. Please delete or reassign the students first.`);
+    }
+
     return this.prisma.college.update({ where: { id }, data: { isActive: false } });
   }
 
@@ -1018,10 +1145,26 @@ export class CmsAdminService {
   }
 
   async createWallCategory(data: any) {
+    // Validate parent category if parentCategoryId is provided
+    if (data.parentCategoryId) {
+      const parentCategory = await this.prisma.wallCategory.findUnique({
+        where: { id: data.parentCategoryId },
+      });
+      if (!parentCategory) {
+        throw new BadRequestException('Parent category not found');
+      }
+      // Ensure parent is actually a parent (not a sub-category)
+      if (parentCategory.parentCategoryId !== null && parentCategory.parentCategoryId !== undefined) {
+        throw new BadRequestException('Cannot create sub-categories under a sub-category. Maximum depth is 2 levels: parent → sub-category.');
+      }
+    }
+
     const category = await this.prisma.wallCategory.create({
       data: {
         name: data.name,
         description: data.description,
+        categoryFor: data.categoryFor || null,
+        parentCategoryId: data.parentCategoryId !== undefined ? data.parentCategoryId : null,
         isActive: data.isActive !== undefined ? data.isActive : true,
       },
     });
@@ -1030,12 +1173,22 @@ export class CmsAdminService {
       where: { categoryId: category.id, isActive: true },
     });
 
+    // Get sub-category count if this is a parent category
+    const subCategoryCount = data.parentCategoryId === null || data.parentCategoryId === undefined
+      ? await this.prisma.wallCategory.count({
+          where: { parentCategoryId: category.id },
+        })
+      : 0;
+
     return {
       id: category.id,
       name: category.name,
       description: category.description,
+      categoryFor: category.categoryFor,
+      parentCategoryId: category.parentCategoryId,
       isActive: category.isActive,
       postCount,
+      subCategoryCount,
       createdAt: category.createdAt,
       updatedAt: category.updatedAt,
     };
@@ -1081,6 +1234,26 @@ export class CmsAdminService {
 
     if (!category) {
       throw new NotFoundException('Category not found');
+    }
+
+    // Check if category has sub-categories (children)
+    const subCategoryCount = await this.prisma.wallCategory.count({
+      where: { parentCategoryId: id },
+    });
+
+    if (subCategoryCount > 0) {
+      throw new ConflictException(`Cannot delete category: it has ${subCategoryCount} sub-category(ies) tagged with it. Please delete or reassign the sub-categories first.`);
+    }
+
+    // Check if this is a sub-category and has chapters
+    if (category.parentCategoryId) {
+      const chapterCount = await this.prisma.chapter.count({
+        where: { subCategoryId: id },
+      });
+
+      if (chapterCount > 0) {
+        throw new ConflictException(`Cannot delete sub-category: it has ${chapterCount} chapter(s) tagged with it. Please delete or reassign the chapters first.`);
+      }
     }
 
     // Check if category has posts
@@ -1239,6 +1412,27 @@ export class CmsAdminService {
         throw new NotFoundException(`Chapter with ID ${id} not found`);
       }
 
+      // Check if chapter has articles (Posts with chapterId in metadata)
+      const articlesWithChapter = await this.prisma.post.findMany({
+        where: {
+          isActive: true,
+        },
+        select: {
+          id: true,
+          metadata: true,
+        },
+      });
+
+      // Filter posts that have chapterId in metadata matching this chapter
+      const articlesCount = articlesWithChapter.filter((post) => {
+        const metadata = post.metadata as any;
+        return metadata?.chapterId === id;
+      }).length;
+
+      if (articlesCount > 0) {
+        throw new ConflictException(`Cannot delete chapter: it has ${articlesCount} article(s) tagged with it. Please delete or reassign the articles first.`);
+      }
+
       await this.prisma.chapter.delete({
         where: { id },
       });
@@ -1246,7 +1440,7 @@ export class CmsAdminService {
       this.logger.log(`Chapter deleted: ${id} - ${chapter.name}`);
       return { success: true, message: 'Chapter deleted successfully' };
     } catch (error: any) {
-      if (error instanceof NotFoundException) {
+      if (error instanceof NotFoundException || error instanceof ConflictException) {
         throw error;
       }
       this.logger.error(`Error deleting chapter ${id}: ${error.message}`, error.stack);

@@ -101,6 +101,9 @@ model User {
   mcqReads                        McqRead[]
   mcqReports                      McqReport[]
   mcqAnswered                     McqAnswered[]
+  personalityReports              PersonalityReport[]
+  personalityAnswered             PersonalityAnswered[]
+  notificationJobs                NotificationJob[]
 
   @@index([email])
   @@index([mobile])
@@ -537,11 +540,48 @@ model Notification {
   isRead    Boolean          @default(false)
   readAt    DateTime?
   createdAt DateTime         @default(now())
+  jobId     String? // Link to notification job if scheduled
 
   user User @relation(fields: [userId], references: [id])
+  job  NotificationJob? @relation(fields: [jobId], references: [id], onDelete: SetNull)
 
   @@index([userId, isRead])
   @@index([createdAt])
+  @@index([jobId])
+}
+
+// Notification Job - Scheduled notification campaigns
+model NotificationJob {
+  id              String   @id @default(uuid())
+  messageType     String   // e.g., 'admin', 'content', 'system', 'birthday', 'reminder'
+  title           String
+  content         String   @db.Text
+  image           String?  // Image URL
+  redirectionLink String?  // Deep link or URL
+  scheduledAt     DateTime
+  language        String   @default("ALL")
+  frequency       String
+  status          String   @default("PENDING")
+  createdBy       String   // Admin user ID
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  lastSentAt      DateTime? // Last time notification was sent (for recurring)
+  nextSendAt      DateTime? // Next scheduled send time (for recurring)
+  totalSent       Int      @default(0) // Total notifications sent
+  totalFailed     Int      @default(0) // Total failed sends
+
+  // Filter conditions (stored as JSON for flexibility)
+  filterConditions Json? // { language?: string, collegeId?: string, courseId?: string, stage?: string, etc. }
+
+  createdByUser User @relation(fields: [createdBy], references: [id], onDelete: Restrict)
+
+  notifications Notification[]
+
+  @@index([status])
+  @@index([scheduledAt])
+  @@index([nextSendAt])
+  @@index([createdBy])
+  @@index([messageType])
 }
 
 model NotificationToken {
@@ -991,6 +1031,10 @@ model PersonalityQuiz {
   updatedAt DateTime @updatedAt
 
   dailyDigestPersonalityQuestions DailyDigestPersonalityQuestion[]
+  personalityViews                PersonalityView[]
+  personalityViewDurations        PersonalityViewDuration[]
+  personalityReports              PersonalityReport[]
+  personalityAnswered             PersonalityAnswered[]
 }
 
 model PersonalityResult {
@@ -1022,6 +1066,72 @@ model DailyDigestPersonalityQuestion {
   @@index([userId])
   @@index([questionId])
   @@index([shownAt])
+}
+
+// Track personality question views
+model PersonalityView {
+  id         String   @id @default(uuid())
+  userId     String?
+  questionId String
+  viewedAt   DateTime @default(now())
+
+  question PersonalityQuiz @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@index([questionId])
+  @@index([userId])
+  @@index([viewedAt])
+}
+
+// Track personality question view duration
+model PersonalityViewDuration {
+  id         String   @id @default(uuid())
+  userId     String?
+  questionId String
+  duration   Int // Duration in seconds
+  viewedAt   DateTime @default(now())
+
+  question PersonalityQuiz @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  @@index([questionId])
+  @@index([userId])
+  @@index([viewedAt])
+}
+
+// Track personality question reports
+model PersonalityReport {
+  id          String   @id @default(uuid())
+  userId      String
+  questionId  String
+  reason      String?  @db.Text
+  description String?  @db.Text
+  status      String   @default("pending") // pending, reviewed, resolved, dismissed
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  question PersonalityQuiz @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, questionId])
+  @@index([questionId])
+  @@index([userId])
+  @@index([status])
+}
+
+// Track personality question answers
+model PersonalityAnswered {
+  id         String   @id @default(uuid())
+  userId     String
+  questionId String
+  answerIndex Int // Index of selected answer
+  answeredAt DateTime @default(now())
+
+  question PersonalityQuiz @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, questionId])
+  @@index([questionId])
+  @@index([userId])
+  @@index([answeredAt])
 }
 
 // Track GK articles shown in daily digest
@@ -1174,4 +1284,15 @@ model McqAnswered {
   @@index([questionId])
   @@index([userId])
   @@index([answeredAt])
+}
+
+// App Configuration - Stores app-wide settings like icons, branding, etc.
+model AppConfig {
+  id        String   @id @default(uuid())
+  key       String   @unique
+  value     Json     // Store configuration as JSON
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([key])
 }

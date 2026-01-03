@@ -28,10 +28,9 @@ export class CreateArticleDto {
   @IsNotEmpty()
   title: string;
 
-  @ApiProperty({ description: 'Article description (max 60 words)' })
+  @ApiProperty({ description: 'Article description' })
   @IsString()
   @IsNotEmpty()
-  // Note: Word count validation is done in service after stripping HTML
   description: string;
 
   @ApiProperty({ description: 'Language (ENGLISH | HINDI)', enum: Language, required: false })

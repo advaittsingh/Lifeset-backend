@@ -83,3 +83,4 @@ ALTER TABLE "UserBadgeStatus" ADD CONSTRAINT "UserBadgeStatus_userId_fkey" FOREI
 
 
 
+

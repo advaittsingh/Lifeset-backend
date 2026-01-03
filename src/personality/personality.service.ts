@@ -17,26 +17,58 @@ export class PersonalityService {
     this.openaiBaseUrl = this.configService.get<string>('OPENAI_BASE_URL') || 'https://api.openai.com/v1';
   }
 
-  async getQuizQuestions() {
+  async getQuizQuestions(userId?: string) {
     try {
       this.logger.log('📝 Getting personality quiz questions');
       
-      // Get personality quiz questions from database or return default set
-      const questions = await this.prisma.personalityQuiz.findMany({
-        where: { isActive: true },
-        orderBy: { order: 'asc' },
-        take: 20,
-        select: {
-          id: true,
-          question: true,
-          options: true,
-          imageUrl: true,
-          order: true,
-          isActive: true,
-          createdAt: true,
-          updatedAt: true,
-        },
-      });
+      // If userId provided, get only unanswered questions (up to 70)
+      let questions;
+      if (userId) {
+        // Get answered question IDs for this user
+        const answeredRecords = await this.prisma.personalityAnswered.findMany({
+          where: { userId },
+          select: { questionId: true },
+        });
+        const answeredQuestionIds = answeredRecords.map(r => r.questionId);
+        
+        questions = await this.prisma.personalityQuiz.findMany({
+          where: {
+            isActive: true,
+            ...(answeredQuestionIds.length > 0 && {
+              id: { notIn: answeredQuestionIds },
+            }),
+          },
+          orderBy: { order: 'asc' },
+          take: 70, // Return up to 70 unanswered questions
+          select: {
+            id: true,
+            question: true,
+            options: true,
+            imageUrl: true,
+            order: true,
+            isActive: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        });
+      } else {
+        // No userId - return all active questions (up to 70)
+        questions = await this.prisma.personalityQuiz.findMany({
+          where: { isActive: true },
+          orderBy: { order: 'asc' },
+          take: 70,
+          select: {
+            id: true,
+            question: true,
+            options: true,
+            imageUrl: true,
+            order: true,
+            isActive: true,
+            createdAt: true,
+            updatedAt: true,
+          },
+        });
+      }
 
       this.logger.log(`✅ Found ${questions.length} personality quiz questions`);
 
@@ -232,6 +264,125 @@ Respond in JSON format:
       where: { userId },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  async trackView(userId: string | undefined, questionId: string) {
+    try {
+      await this.prisma.personalityView.create({
+        data: {
+          userId: userId || null,
+          questionId,
+        },
+      });
+      this.logger.log(`✅ Tracked view for personality question ${questionId} by user ${userId || 'anonymous'}`);
+      return { success: true };
+    } catch (error: any) {
+      this.logger.error(`❌ Error tracking view: ${error.message}`);
+      // Don't throw - tracking is non-critical
+      return { success: false, error: error.message };
+    }
+  }
+
+  async trackDuration(userId: string | undefined, questionId: string, duration: number) {
+    try {
+      await this.prisma.personalityViewDuration.create({
+        data: {
+          userId: userId || null,
+          questionId,
+          duration,
+        },
+      });
+      this.logger.log(`✅ Tracked duration ${duration}s for personality question ${questionId} by user ${userId || 'anonymous'}`);
+      return { success: true };
+    } catch (error: any) {
+      this.logger.error(`❌ Error tracking duration: ${error.message}`);
+      // Don't throw - tracking is non-critical
+      return { success: false, error: error.message };
+    }
+  }
+
+  async submitAnswer(userId: string, questionId: string, answerIndex: number) {
+    try {
+      // Check if question exists
+      const question = await this.prisma.personalityQuiz.findUnique({
+        where: { id: questionId },
+      });
+
+      if (!question) {
+        throw new Error('Question not found');
+      }
+
+      // Validate answer index
+      const options = question.options as string[];
+      if (answerIndex < 0 || answerIndex >= options.length) {
+        throw new Error('Invalid answer index');
+      }
+
+      // Upsert answer (update if exists, create if not)
+      const answered = await this.prisma.personalityAnswered.upsert({
+        where: {
+          userId_questionId: {
+            userId,
+            questionId,
+          },
+        },
+        update: {
+          answerIndex,
+          answeredAt: new Date(),
+        },
+        create: {
+          userId,
+          questionId,
+          answerIndex,
+        },
+      });
+
+      this.logger.log(`✅ User ${userId} submitted answer ${answerIndex} for question ${questionId}`);
+      return { success: true, data: answered };
+    } catch (error: any) {
+      this.logger.error(`❌ Error submitting answer: ${error.message}`);
+      throw error;
+    }
+  }
+
+  async reportQuestion(userId: string, questionId: string, feedback: string) {
+    try {
+      // Check if question exists
+      const question = await this.prisma.personalityQuiz.findUnique({
+        where: { id: questionId },
+      });
+
+      if (!question) {
+        throw new Error('Question not found');
+      }
+
+      // Upsert report (update if exists, create if not)
+      const report = await this.prisma.personalityReport.upsert({
+        where: {
+          userId_questionId: {
+            userId,
+            questionId,
+          },
+        },
+        update: {
+          description: feedback,
+          status: 'pending',
+          updatedAt: new Date(),
+        },
+        create: {
+          userId,
+          questionId,
+          description: feedback,
+          status: 'pending',
+        },
+      });
+
+      this.logger.log(`✅ User ${userId} reported question ${questionId}`);
+      return { success: true, data: report };
+    } catch (error: any) {
+      this.logger.error(`❌ Error reporting question: ${error.message}`);
+      throw error;
+    }
   }
 
   async getDailyDigestQuestions(userId: string, excludeAnswered: boolean = true) {

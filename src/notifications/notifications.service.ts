@@ -17,6 +17,7 @@ export class NotificationsService {
     title: string;
     message: string;
     type: NotificationType;
+    jobId?: string;
   }) {
     const notification = await this.prisma.notification.create({
       data: {
@@ -24,6 +25,7 @@ export class NotificationsService {
         title: data.title,
         message: data.message,
         type: data.type,
+        jobId: data.jobId,
       },
     });
 
@@ -33,6 +35,7 @@ export class NotificationsService {
       body: data.message,
       data: { 
         type: data.type,
+        jobId: data.jobId,
       },
     });
 

@@ -167,14 +167,31 @@ export class AuthService {
       // Find user with proper error handling for database issues
       let user;
       try {
+        // Try case-insensitive search first
         user = await this.prisma.user.findFirst({
           where: {
             OR: [
-              { email: emailOrMobile },
+              { email: { equals: emailOrMobile, mode: 'insensitive' } },
               { mobile: emailOrMobile },
             ],
           },
         });
+        
+        // If not found, try exact match
+        if (!user) {
+          user = await this.prisma.user.findFirst({
+            where: {
+              OR: [
+                { email: emailOrMobile },
+                { mobile: emailOrMobile },
+              ],
+            },
+          });
+        }
+        
+        // Debug: Check total user count
+        const userCount = await this.prisma.user.count();
+        this.logger.log(`Database has ${userCount} users. User lookup result: ${user ? `Found user ${user.id}` : 'User not found'} for ${emailOrMobile?.substring(0, 3)}***`);
       } catch (dbError: any) {
         this.logger.error(`Database error during user lookup: ${dbError.message}`, dbError.stack);
         // Check if it's a connection error
@@ -185,14 +202,17 @@ export class AuthService {
       }
 
       if (!user) {
+        this.logger.warn(`User not found for: ${emailOrMobile?.substring(0, 3)}***`);
         throw new UnauthorizedException('Invalid credentials');
       }
 
       // Check if user has a password set
       if (!user.password) {
-        this.logger.warn(`User ${user.id} does not have a password set`);
+        this.logger.error(`User ${user.id} (email: ${user.email || 'N/A'}, mobile: ${user.mobile || 'N/A'}) does not have a password set. Password field is: ${user.password === null ? 'null' : 'empty string'}`);
         throw new UnauthorizedException('Invalid credentials');
       }
+
+      this.logger.log(`User found: ${user.id}, email: ${user.email || 'N/A'}, mobile: ${user.mobile || 'N/A'}, hasPassword: ${!!user.password}, isActive: ${user.isActive}`);
 
       // Validate password
       let isPasswordValid: boolean;

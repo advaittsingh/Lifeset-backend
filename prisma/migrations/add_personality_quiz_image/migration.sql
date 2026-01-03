@@ -3,3 +3,4 @@ ALTER TABLE "PersonalityQuiz" ADD COLUMN IF NOT EXISTS "imageUrl" TEXT;
 
 
 
+
