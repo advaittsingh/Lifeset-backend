@@ -542,7 +542,7 @@ model Notification {
   createdAt DateTime         @default(now())
   jobId     String? // Link to notification job if scheduled
 
-  user User @relation(fields: [userId], references: [id])
+  user User             @relation(fields: [userId], references: [id])
   job  NotificationJob? @relation(fields: [jobId], references: [id], onDelete: SetNull)
 
   @@index([userId, isRead])
@@ -552,23 +552,23 @@ model Notification {
 
 // Notification Job - Scheduled notification campaigns
 model NotificationJob {
-  id              String   @id @default(uuid())
-  messageType     String   // e.g., 'admin', 'content', 'system', 'birthday', 'reminder'
+  id              String    @id @default(uuid())
+  messageType     String // e.g., 'admin', 'content', 'system', 'birthday', 'reminder'
   title           String
-  content         String   @db.Text
-  image           String?  // Image URL
-  redirectionLink String?  // Deep link or URL
+  content         String    @db.Text
+  image           String? // Image URL
+  redirectionLink String? // Deep link or URL
   scheduledAt     DateTime
-  language        String   @default("ALL")
+  language        String    @default("ALL")
   frequency       String
-  status          String   @default("PENDING")
-  createdBy       String   // Admin user ID
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  status          String    @default("PENDING")
+  createdBy       String // Admin user ID
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
   lastSentAt      DateTime? // Last time notification was sent (for recurring)
   nextSendAt      DateTime? // Next scheduled send time (for recurring)
-  totalSent       Int      @default(0) // Total notifications sent
-  totalFailed     Int      @default(0) // Total failed sends
+  totalSent       Int       @default(0) // Total notifications sent
+  totalFailed     Int       @default(0) // Total failed sends
 
   // Filter conditions (stored as JSON for flexibility)
   filterConditions Json? // { language?: string, collegeId?: string, courseId?: string, stage?: string, etc. }
@@ -1119,11 +1119,11 @@ model PersonalityReport {
 
 // Track personality question answers
 model PersonalityAnswered {
-  id         String   @id @default(uuid())
-  userId     String
-  questionId String
+  id          String   @id @default(uuid())
+  userId      String
+  questionId  String
   answerIndex Int // Index of selected answer
-  answeredAt DateTime @default(now())
+  answeredAt  DateTime @default(now())
 
   question PersonalityQuiz @relation(fields: [questionId], references: [id], onDelete: Cascade)
   user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -1290,7 +1290,7 @@ model McqAnswered {
 model AppConfig {
   id        String   @id @default(uuid())
   key       String   @unique
-  value     Json     // Store configuration as JSON
+  value     Json // Store configuration as JSON
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

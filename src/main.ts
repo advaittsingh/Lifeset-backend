@@ -129,9 +129,16 @@ async function bootstrap() {
   SwaggerModule.setup(`${apiPrefix}/docs`, app, document);
 
   const port = process.env.PORT || 3000;
-  await app.listen(port);
+  const server = await app.listen(port);
+  
+  // Increase server timeouts for file uploads
+  server.timeout = 300000; // 5 minutes
+  server.keepAliveTimeout = 65000; // 65 seconds (must be > 60s for ALB)
+  server.headersTimeout = 66000; // 66 seconds (must be > keepAliveTimeout)
+  
   console.log(`Application is running on: http://localhost:${port}`);
   console.log(`API Documentation: http://localhost:${port}${apiPrefix}/docs`);
+  console.log(`Server timeouts configured: ${server.timeout}ms`);
 }
 
 bootstrap();

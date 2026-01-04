@@ -95,11 +95,11 @@ export class FileController {
 
     // Return data directly - TransformInterceptor will wrap it with { success: true, data: {...}, timestamp: ... }
     return {
-      url: result.Location,
-      key: result.Key,
-      fileName: file.originalname,
-      fileSize: file.size,
-      mimeType: file.mimetype,
+        url: result.Location,
+        key: result.Key,
+        fileName: file.originalname,
+        fileSize: file.size,
+        mimeType: file.mimetype,
     };
     } catch (error: any) {
       logger.error(`File upload failed: ${error.message}`, error.stack);
@@ -166,11 +166,11 @@ export class FileController {
 
     // Return data directly - TransformInterceptor will wrap it with { success: true, data: {...}, timestamp: ... }
     return {
-      url: result.Location,
-      key: result.Key,
-      fileName: file.originalname,
-      fileSize: file.size,
-      type: 'certificate',
+        url: result.Location,
+        key: result.Key,
+        fileName: file.originalname,
+        fileSize: file.size,
+        type: 'certificate',
     };
     } catch (error: any) {
       logger.error(`Certificate upload failed: ${error.message}`, error.stack);

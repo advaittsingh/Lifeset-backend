@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "McqQuestion" ADD COLUMN IF NOT EXISTS "language" TEXT NOT NULL DEFAULT 'ENGLISH';

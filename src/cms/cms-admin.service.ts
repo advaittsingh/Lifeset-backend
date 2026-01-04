@@ -478,6 +478,7 @@ export class CmsAdminService {
         articleId: data.articleId || null,
         questionImage: data.questionImage || null,
         explanationImage: data.explanationImage || null,
+        language: data.language || 'ENGLISH',
       },
     });
   }
@@ -502,6 +503,7 @@ export class CmsAdminService {
     if (data.articleId !== undefined) updateData.articleId = data.articleId;
     if (data.questionImage !== undefined) updateData.questionImage = data.questionImage;
     if (data.explanationImage !== undefined) updateData.explanationImage = data.explanationImage;
+    if (data.language !== undefined) updateData.language = data.language;
 
     return this.prisma.mcqQuestion.update({ 
       where: { id }, 

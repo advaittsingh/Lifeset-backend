@@ -40,8 +40,8 @@ export class JobsService {
     skills?: string[];
     page?: number;
     limit?: number;
-    type?: 'JOB' | 'INTERNSHIP' | 'FREELANCING';
-    excludeType?: 'JOB' | 'INTERNSHIP' | 'FREELANCING';
+    type?: 'JOB' | 'INTERNSHIP' | 'FREELANCING' | 'GOVT_JOB';
+    excludeType?: 'JOB' | 'INTERNSHIP' | 'FREELANCING' | 'GOVT_JOB';
   }) {
     const page = parseInt(String(filters.page || 1), 10);
     const limit = parseInt(String(filters.limit || 20), 10);
@@ -50,16 +50,21 @@ export class JobsService {
     // Build post filter - query Post directly since CMS creates Post records
     const postFilter: any = { 
       isActive: true,
-      postType: { in: ['JOB', 'INTERNSHIP', 'FREELANCING'] },
+      postType: { in: ['JOB', 'INTERNSHIP', 'FREELANCING', 'GOVT_JOB'] },
     };
     
     // Filter by postType (include specific type) - excludeType takes precedence if both are provided
     if (filters.excludeType) {
       postFilter.postType = { 
-        in: ['JOB', 'INTERNSHIP', 'FREELANCING'].filter(t => t !== filters.excludeType)
+        in: ['JOB', 'INTERNSHIP', 'FREELANCING', 'GOVT_JOB'].filter(t => t !== filters.excludeType)
       };
     } else if (filters.type) {
-      postFilter.postType = filters.type;
+      // Support GOVT_JOB type
+      if (filters.type === 'GOVT_JOB') {
+        postFilter.postType = 'GOVT_JOB';
+      } else {
+        postFilter.postType = filters.type;
+      }
     }
 
     // Build search filter
@@ -171,7 +176,7 @@ export class JobsService {
       post = await this.prisma.post.findUnique({
         where: { 
           id,
-          postType: { in: ['JOB', 'INTERNSHIP', 'FREELANCING'] },
+          postType: { in: ['JOB', 'INTERNSHIP', 'FREELANCING', 'GOVT_JOB'] },
         },
         include: {
           user: true,

@@ -213,5 +213,19 @@ export class CmsController {
   ) {
     return this.cmsService.trackViewDuration(id, data.duration, user?.id, 'COLLEGE_FEED');
   }
+
+  @Public()
+  @Get('govt-vacancies')
+  @ApiOperation({ summary: 'Get government vacancies' })
+  async getGovtVacancies(@Query() filters: any) {
+    return this.cmsService.getGovtVacancies(filters);
+  }
+
+  @Public()
+  @Get('govt-vacancies/:id')
+  @ApiOperation({ summary: 'Get government vacancy by ID' })
+  async getGovtVacancyById(@Param('id') id: string) {
+    return this.cmsService.getGovtVacancyById(id);
+  }
 }
 

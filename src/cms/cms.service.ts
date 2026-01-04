@@ -27,6 +27,153 @@ export class CmsService {
     return [];
   }
 
+  // ========== Govt Vacancies ==========
+  async getGovtVacancies(filters?: any) {
+    const where: any = { 
+      postType: 'GOVT_JOB',
+      isActive: true,
+    };
+    
+    if (filters?.search) {
+      where.OR = [
+        { title: { contains: filters.search, mode: 'insensitive' } },
+        { description: { contains: filters.search, mode: 'insensitive' } },
+      ];
+    }
+    
+    if (filters?.categoryId) {
+      where.categoryId = filters.categoryId;
+    }
+
+    const page = parseInt(String(filters?.page || 1), 10);
+    const limit = parseInt(String(filters?.limit || 20), 10);
+    const skip = (page - 1) * limit;
+
+    const [posts, total] = await Promise.all([
+      this.prisma.post.findMany({
+        where,
+        include: { 
+          user: {
+            select: {
+              id: true,
+              email: true,
+              profileImage: true,
+            },
+          },
+          category: true,
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.post.count({ where }),
+    ]);
+
+    // Transform to match job format for mobile app compatibility
+    const vacancies = posts.map((post) => {
+      const metadata = post.metadata as any || {};
+      return {
+        id: post.id,
+        postId: post.id,
+        jobTitle: post.title,
+        jobDescription: post.description,
+        location: metadata.jobLocation || null,
+        salaryMin: metadata.salaryMin || null,
+        salaryMax: metadata.salaryMax || null,
+        experience: metadata.experience || null,
+        skills: metadata.skills || [],
+        applicationDeadline: metadata.applicationSubmissionLastDate 
+          ? new Date(metadata.applicationSubmissionLastDate) 
+          : null,
+        examDate: metadata.examDate ? new Date(metadata.examDate) : null,
+        examName: metadata.examName || null,
+        examFees: metadata.examFees || null,
+        vacanciesSeat: metadata.vacanciesSeat || null,
+        eligibility: metadata.eligibility || null,
+        ageLimit: metadata.ageLimit || null,
+        organisationImage: metadata.organisationImage || post.images?.[0] || null,
+        createdAt: post.createdAt,
+        updatedAt: post.updatedAt,
+        post: {
+          id: post.id,
+          postType: post.postType,
+          user: post.user,
+        },
+      };
+    });
+
+    return {
+      data: vacancies,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  async getGovtVacancyById(id: string) {
+    const post = await this.prisma.post.findUnique({
+      where: { 
+        id,
+        postType: 'GOVT_JOB',
+        isActive: true,
+      },
+      include: { 
+        user: {
+          select: {
+            id: true,
+            email: true,
+            profileImage: true,
+          },
+        },
+        category: true,
+      },
+    });
+
+    if (!post) {
+      throw new NotFoundException('Government vacancy not found');
+    }
+
+    // Transform to match job format
+    const metadata = post.metadata as any || {};
+    return {
+      id: post.id,
+      postId: post.id,
+      jobTitle: post.title,
+      jobDescription: post.description,
+      location: metadata.jobLocation || null,
+      salaryMin: metadata.salaryMin || null,
+      salaryMax: metadata.salaryMax || null,
+      experience: metadata.experience || null,
+      skills: metadata.skills || [],
+      applicationDeadline: metadata.applicationSubmissionLastDate 
+        ? new Date(metadata.applicationSubmissionLastDate) 
+        : null,
+      examDate: metadata.examDate ? new Date(metadata.examDate) : null,
+      examName: metadata.examName || null,
+      examFees: metadata.examFees || null,
+      vacanciesSeat: metadata.vacanciesSeat || null,
+      eligibility: metadata.eligibility || null,
+      ageLimit: metadata.ageLimit || null,
+      organisationImage: metadata.organisationImage || post.images?.[0] || null,
+      nameOfPost: metadata.nameOfPost || post.title,
+      firstAnnouncementDate: metadata.firstAnnouncementDate 
+        ? new Date(metadata.firstAnnouncementDate) 
+        : null,
+      evaluationExamPattern: metadata.evaluationExamPattern || null,
+      cutoff: metadata.cutoff || null,
+      createdAt: post.createdAt,
+      updatedAt: post.updatedAt,
+      post: {
+        id: post.id,
+        postType: post.postType,
+        user: post.user,
+      },
+    };
+  }
+
   async getCurrentAffairs(filters?: any, userId?: string) {
     const where: any = { 
       postType: 'CURRENT_AFFAIRS',

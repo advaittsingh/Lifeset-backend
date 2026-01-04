@@ -182,7 +182,7 @@ export class NetworkService {
       name: studentProfile
         ? `${studentProfile.firstName || ''} ${studentProfile.lastName || ''}`.trim()
         : user.email || user.mobile,
-      profileImage: user.profileImage || studentProfile?.profileImage || studentProfile?.profilePicture,
+      profileImage: user.profileImage || studentProfile?.profileImage,
       college: studentProfile?.college?.name,
       course: studentProfile?.course?.name,
       skills: allSkills,
@@ -208,7 +208,7 @@ export class NetworkService {
       
       // If a specific userType filter is provided (and it's not ADMIN), apply it
       if (filters?.userType && filters.userType !== 'ADMIN') {
-        where.userType = filters.userType;
+      where.userType = filters.userType;
       }
     }
 
@@ -232,7 +232,6 @@ export class NetworkService {
               firstName: true,
               lastName: true,
               profileImage: true,
-              profilePicture: true,
               technicalSkills: true,
               softSkills: true,
               interestHobbies: true,

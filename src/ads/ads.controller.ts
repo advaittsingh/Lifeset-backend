@@ -26,10 +26,27 @@ export class AdsController {
     return this.adsService.trackImpression(data.adSlotId, user?.id);
   }
 
+  @Public()
+  @Post('campaigns/impression')
+  @ApiOperation({ summary: 'Track ad campaign impression' })
+  async trackAdCampaignImpression(
+    @Body() data: { adCampaignId: string },
+    @CurrentUser() user?: any,
+  ) {
+    return this.adsService.trackAdCampaignImpression(data.adCampaignId, user?.id);
+  }
+
   @Get('analytics/:id')
   @ApiOperation({ summary: 'Get ad analytics' })
   async getAdAnalytics(@Param('id') id: string) {
     return this.adsService.getAdAnalytics(id);
+  }
+
+  @Public()
+  @Get('campaigns/active')
+  @ApiOperation({ summary: 'Get active ad campaigns for feed' })
+  async getActiveAdCampaigns(@CurrentUser() user?: any) {
+    return this.adsService.getActiveAdCampaigns(user?.id);
   }
 }
 
