@@ -977,6 +977,7 @@ model McqQuestion {
   tags             String[]
   questionImage    String?  @db.Text // Image URL for the question
   explanationImage String?  @db.Text // Image URL for the explanation
+  language         String   @default("ENGLISH") // Language: ENGLISH or HINDI
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
