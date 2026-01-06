@@ -515,15 +515,7 @@ Respond in JSON format:
         imageUrl: q.imageUrl || null,
       }));
 
-      // Log image status for debugging
-      const questionsWithImagesCount = questionsWithImages.filter(q => q.imageUrl).length;
-      this.logger.log(`✅ Returning ${questionsWithImages.length} personality questions for user ${userId} (${questionsWithImagesCount} with images)`);
-      
-      // Log each question's image status for debugging
-      questionsWithImages.forEach((q, index) => {
-        this.logger.debug(`Question ${index + 1} (${q.id}): imageUrl = ${q.imageUrl ? 'present' : 'null'}`);
-      });
-      
+      this.logger.log(`✅ Returning ${questionsWithImages.length} personality questions for user ${userId}`);
       return { questions: questionsWithImages };
     } catch (error: any) {
       this.logger.error(`❌ Error getting daily digest questions for user ${userId}: ${error.message}`, error.stack);
