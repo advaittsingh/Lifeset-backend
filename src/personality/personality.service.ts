@@ -82,6 +82,7 @@ export class PersonalityService {
       const questionsWithImages = questions.map(q => ({
         ...q,
         imageUrl: q.imageUrl || null, // Explicitly include imageUrl
+        hideTag: true, // Hide the PERSONALITY tag on the card
       }));
 
       return { questions: questionsWithImages };
@@ -226,6 +227,7 @@ Respond in JSON format:
           options: ['Strongly Disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly Agree'],
           imageUrl: null,
           order: 1,
+          hideTag: true, // Hide the PERSONALITY tag on the card
         },
         {
           id: '2',
@@ -233,6 +235,7 @@ Respond in JSON format:
           options: ['Strongly Disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly Agree'],
           imageUrl: null,
           order: 2,
+          hideTag: true, // Hide the PERSONALITY tag on the card
         },
         {
           id: '3',
@@ -240,6 +243,7 @@ Respond in JSON format:
           options: ['Strongly Disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly Agree'],
           imageUrl: null,
           order: 3,
+          hideTag: true, // Hide the PERSONALITY tag on the card
         },
         {
           id: '4',
@@ -247,6 +251,7 @@ Respond in JSON format:
           options: ['Strongly Disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly Agree'],
           imageUrl: null,
           order: 4,
+          hideTag: true, // Hide the PERSONALITY tag on the card
         },
         {
           id: '5',
@@ -254,6 +259,7 @@ Respond in JSON format:
           options: ['Strongly Disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly Agree'],
           imageUrl: null,
           order: 5,
+          hideTag: true, // Hide the PERSONALITY tag on the card
         },
       ],
     };
@@ -513,9 +519,18 @@ Respond in JSON format:
       const questionsWithImages = questions.map(q => ({
         ...q,
         imageUrl: q.imageUrl || null,
+        hideTag: true, // Hide the PERSONALITY tag on the card
       }));
 
-      this.logger.log(`✅ Returning ${questionsWithImages.length} personality questions for user ${userId}`);
+      // Log image status for debugging
+      const questionsWithImagesCount = questionsWithImages.filter(q => q.imageUrl).length;
+      this.logger.log(`✅ Returning ${questionsWithImages.length} personality questions for user ${userId} (${questionsWithImagesCount} with images)`);
+      
+      // Log each question's image status for debugging
+      questionsWithImages.forEach((q, index) => {
+        this.logger.debug(`Question ${index + 1} (${q.id}): imageUrl = ${q.imageUrl ? 'present' : 'null'}`);
+      });
+      
       return { questions: questionsWithImages };
     } catch (error: any) {
       this.logger.error(`❌ Error getting daily digest questions for user ${userId}: ${error.message}`, error.stack);
