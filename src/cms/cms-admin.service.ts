@@ -1232,10 +1232,39 @@ export class CmsAdminService {
   async deleteWallCategory(id: string) {
     const category = await this.prisma.wallCategory.findUnique({
       where: { id },
+      include: {
+        _count: {
+          select: {
+            posts: true,
+            children: true,
+            chapters: true,
+            mcqQuestions: true,
+          },
+        },
+      },
     });
 
     if (!category) {
       throw new NotFoundException('Category not found');
+    }
+
+    // Check if category has posts (which might have constraints preventing deletion)
+    const postCount = category._count?.posts || 0;
+    if (postCount > 0) {
+      // Check if any posts have related data that might prevent deletion
+      const postsWithJobPost = await this.prisma.post.count({
+        where: {
+          categoryId: id,
+          jobPost: { isNot: null },
+        },
+      });
+      
+      if (postsWithJobPost > 0) {
+        throw new BadRequestException(
+          `Cannot delete category: This category has ${postCount} post(s), including ${postsWithJobPost} job post(s). ` +
+          `Job posts cannot be deleted through category deletion. Please delete or reassign the posts first.`
+        );
+      }
     }
 
     // Use transaction to ensure atomicity of cascading deletes
