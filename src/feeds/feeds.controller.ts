@@ -12,6 +12,12 @@ import { CreateJobDto } from './dto/create-job.dto';
 export class FeedsController {
   constructor(private readonly feedsService: FeedsService) {}
 
+  @Get('list')
+  @ApiOperation({ summary: 'Get feeds list (lightweight, optimized for list views)' })
+  async getFeedsList(@Query() filters: any, @CurrentUser() user?: any) {
+    return this.feedsService.getFeedsList(filters, user?.id);
+  }
+
   @Get()
   @ApiOperation({ summary: 'Get feeds list' })
   async getFeeds(@Query() filters: any, @CurrentUser() user?: any) {

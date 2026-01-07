@@ -34,6 +34,15 @@ export class CmsController {
     return this.cmsService.getFaqs();
   }
 
+  @Get('current-affairs/list')
+  @ApiOperation({ summary: 'Get current affairs articles list (lightweight, optimized for list views)' })
+  async getCurrentAffairsList(
+    @Query() filters: any,
+    @CurrentUser() user?: any,
+  ) {
+    return this.cmsService.getCurrentAffairsList(filters, user?.id);
+  }
+
   @Get('current-affairs')
   @ApiOperation({ summary: 'Get current affairs articles' })
   async getCurrentAffairs(
@@ -56,6 +65,12 @@ export class CmsController {
     @CurrentUser() user?: any,
   ) {
     return this.cmsService.getCurrentAffairsDailyDigest(language, user?.id);
+  }
+
+  @Get('general-knowledge/list')
+  @ApiOperation({ summary: 'Get general knowledge articles list (lightweight, optimized for list views)' })
+  async getGeneralKnowledgeList(@Query() filters: any) {
+    return this.cmsService.getGeneralKnowledgeList(filters);
   }
 
   @Get('general-knowledge')

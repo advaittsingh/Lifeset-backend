@@ -30,6 +30,93 @@ export class McqService {
     }
   }
 
+  // Lightweight list endpoint for MCQ Questions (optimized for list views)
+  async getQuestionsList(filters: {
+    categoryId?: string;
+    difficulty?: string;
+    tags?: string[];
+    articleId?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    try {
+      const page = parseInt(String(filters.page || 1), 10);
+      const limit = parseInt(String(filters.limit || 20), 10);
+      const skip = (page - 1) * limit;
+
+      const where: any = {};
+
+      if (filters.categoryId) {
+        where.categoryId = filters.categoryId;
+      }
+
+      if (filters.difficulty) {
+        where.difficulty = filters.difficulty;
+      }
+
+      if (filters.tags && filters.tags.length > 0) {
+        where.tags = { hasSome: filters.tags };
+      }
+
+      if (filters.articleId) {
+        where.articleId = filters.articleId;
+      }
+
+      const [questions, total] = await Promise.all([
+        this.prisma.mcqQuestion.findMany({
+          where,
+          select: {
+            id: true,
+            question: true,
+            options: true,
+            difficulty: true,
+            tags: true,
+            questionImage: true,
+            language: true,
+            createdAt: true,
+            category: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+            _count: {
+              select: {
+                attempts: true,
+                bookmarks: true,
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+        }),
+        this.prisma.mcqQuestion.count({ where }),
+      ]);
+
+      // Truncate question text to 150 chars for list view
+      const enhancedQuestions = questions.map(q => ({
+        ...q,
+        question: q.question && q.question.length > 150 
+          ? q.question.substring(0, 150) + '...' 
+          : q.question,
+      }));
+
+      return {
+        data: enhancedQuestions,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
+      };
+    } catch (error: any) {
+      this.logger.error(`Error fetching MCQ questions list: ${error.message}`, error.stack);
+      throw new BadRequestException(`Failed to fetch MCQ questions list: ${error.message}`);
+    }
+  }
+
   async getQuestions(filters: {
     categoryId?: string;
     difficulty?: string;
@@ -91,9 +178,21 @@ export class McqService {
       try {
         questions = await this.prisma.mcqQuestion.findMany({
           where,
-          skip,
-          take: limit,
-          include: {
+          select: {
+            id: true,
+            question: true,
+            options: true,
+            correctAnswer: true,
+            explanation: true,
+            solution: true,
+            difficulty: true,
+            tags: true,
+            articleId: true,
+            questionImage: true,
+            explanationImage: true,
+            language: true,
+            createdAt: true,
+            updatedAt: true,
             category: {
               select: {
                 id: true,
@@ -103,6 +202,8 @@ export class McqService {
               },
             },
           },
+          skip,
+          take: limit,
           orderBy: randomUnanswered ? undefined : { createdAt: 'desc' },
         });
       } catch (includeError: any) {
@@ -140,8 +241,58 @@ export class McqService {
         }, {} as Record<string, { isAnswered: boolean; answeredAt: Date | null }>);
       }
 
+      // Batch fetch subcategories and chapters to avoid N+1 queries
+      const subCategoryIds = questions
+        .map(q => (q.metadata as any)?.subCategoryId)
+        .filter(Boolean);
+      const chapterIds = questions
+        .map(q => (q.metadata as any)?.chapterId)
+        .filter(Boolean);
+
+      const [subCategories, chapters] = await Promise.all([
+        subCategoryIds.length > 0
+          ? this.prisma.wallCategory.findMany({
+              where: { id: { in: subCategoryIds } },
+              select: { id: true, name: true },
+            })
+          : [],
+        chapterIds.length > 0
+          ? this.prisma.chapter.findMany({
+              where: { id: { in: chapterIds } },
+              select: { id: true, name: true },
+            })
+          : [],
+      ]);
+
+      // Create lookup maps for O(1) access
+      const subCategoryMap = new Map<string, string>(subCategories.map(sc => [sc.id, sc.name] as [string, string]));
+      const chapterMap = new Map<string, string>(chapters.map(ch => [ch.id, ch.name] as [string, string]));
+
+      // Enhance questions using maps (O(1) lookup instead of N queries)
+      const enhancedQuestions = questions.map(question => {
+        const metadata = (question.metadata as any) || {};
+        const subCategoryId = metadata.subCategoryId;
+        const chapterId = metadata.chapterId;
+        
+        const subCategoryName = subCategoryMap.get(subCategoryId) || metadata.subCategory || metadata.subCategoryName || '';
+        const sectionName = chapterMap.get(chapterId) || metadata.section || metadata.sectionName || '';
+        
+        // Update metadata with names
+        const updatedMetadata = {
+          ...metadata,
+          ...(subCategoryName && { subCategory: subCategoryName, subCategoryName }),
+          ...(sectionName && { section: sectionName, sectionName }),
+        };
+        
+        return {
+          ...question,
+          metadata: updatedMetadata,
+          subCategory: subCategoryName ? { name: subCategoryName } : null,
+        };
+      });
+
       // Add answered status, solution, and articleId to each question
-      const questionsWithMetadata = questions.map(question => {
+      const questionsWithMetadata = enhancedQuestions.map(question => {
         const answeredStatus = answeredStatusMap[question.id] || { isAnswered: false, answeredAt: null };
         return {
           ...question,

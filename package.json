@@ -24,6 +24,7 @@
     "prisma:studio": "prisma studio",
     "prisma:seed": "ts-node prisma/seed.ts",
     "migrate:data": "ts-node scripts/migrate-from-mysql.ts",
+    "load:migration-data": "ts-node scripts/load-migration-data.ts",
     "import:backups": "bash scripts/import-sql-backups.sh",
     "clean": "rm -rf dist"
   },
@@ -75,6 +76,7 @@
     "@types/passport-jwt": "^3.0.13",
     "@types/passport-local": "^1.0.38",
     "@types/supertest": "^2.0.16",
+    "@types/xlsx": "^0.0.35",
     "@typescript-eslint/eslint-plugin": "^6.13.1",
     "@typescript-eslint/parser": "^6.13.1",
     "eslint": "^8.54.0",
@@ -89,7 +91,8 @@
     "ts-loader": "^9.5.1",
     "ts-node": "^10.9.2",
     "tsc-alias": "^1.8.10",
-    "typescript": "^5.2.2"
+    "typescript": "^5.2.2",
+    "xlsx": "^0.18.5"
   },
   "jest": {
     "moduleFileExtensions": [

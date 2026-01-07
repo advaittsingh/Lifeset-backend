@@ -361,6 +361,11 @@ Resources:
       UnhealthyThresholdCount: 3
       Matcher:
         HttpCode: '200'
+      # Increase idle timeout to 300 seconds (5 minutes) for file uploads
+      # This matches the backend server timeout
+      Attributes:
+        - Key: deregistration_delay.timeout_seconds
+          Value: '30'
 
   # ECR Repository
   ECRRepository:

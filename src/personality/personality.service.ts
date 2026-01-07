@@ -82,7 +82,6 @@ export class PersonalityService {
       const questionsWithImages = questions.map(q => ({
         ...q,
         imageUrl: q.imageUrl || null, // Explicitly include imageUrl
-        hideTag: true, // Hide the PERSONALITY tag on the card
       }));
 
       return { questions: questionsWithImages };
@@ -227,7 +226,6 @@ Respond in JSON format:
           options: ['Strongly Disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly Agree'],
           imageUrl: null,
           order: 1,
-          hideTag: true, // Hide the PERSONALITY tag on the card
         },
         {
           id: '2',
@@ -235,7 +233,6 @@ Respond in JSON format:
           options: ['Strongly Disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly Agree'],
           imageUrl: null,
           order: 2,
-          hideTag: true, // Hide the PERSONALITY tag on the card
         },
         {
           id: '3',
@@ -243,7 +240,6 @@ Respond in JSON format:
           options: ['Strongly Disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly Agree'],
           imageUrl: null,
           order: 3,
-          hideTag: true, // Hide the PERSONALITY tag on the card
         },
         {
           id: '4',
@@ -251,7 +247,6 @@ Respond in JSON format:
           options: ['Strongly Disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly Agree'],
           imageUrl: null,
           order: 4,
-          hideTag: true, // Hide the PERSONALITY tag on the card
         },
         {
           id: '5',
@@ -259,7 +254,6 @@ Respond in JSON format:
           options: ['Strongly Disagree', 'Disagree', 'Neutral', 'Agree', 'Strongly Agree'],
           imageUrl: null,
           order: 5,
-          hideTag: true, // Hide the PERSONALITY tag on the card
         },
       ],
     };
@@ -519,7 +513,6 @@ Respond in JSON format:
       const questionsWithImages = questions.map(q => ({
         ...q,
         imageUrl: q.imageUrl || null,
-        hideTag: true, // Hide the PERSONALITY tag on the card
       }));
 
       // Log image status for debugging

@@ -38,7 +38,18 @@ async function bootstrap() {
       },
     },
   }));
-  app.use(compression());
+  // Enhanced compression configuration
+  app.use(compression({
+    level: 6, // Balance between compression and CPU (1-9, default 6)
+    threshold: 1024, // Only compress responses > 1KB
+    filter: (req, res) => {
+      // Compress JSON and text responses
+      if (req.headers['x-no-compression']) {
+        return false;
+      }
+      return compression.filter(req, res);
+    },
+  }));
 
   // CORS
   const corsOrigins = process.env.CORS_ORIGIN?.split(',') || [

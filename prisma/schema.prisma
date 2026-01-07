@@ -992,6 +992,9 @@ model McqQuestion {
 
   @@index([articleId])
   @@index([categoryId])
+  // Composite indexes for common query patterns
+  @@index([categoryId, language, createdAt]) // For category + language filtering
+  @@index([difficulty, createdAt]) // For difficulty-based queries
 }
 
 model McqAttempt {

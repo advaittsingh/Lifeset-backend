@@ -1,10 +1,15 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { ConnectionStatus } from '@prisma/client';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '@/shared';
 
 @Injectable()
 export class NetworkService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notificationsService: NotificationsService,
+  ) {}
 
   async searchUsers(query: string, filters?: any) {
     const where: any = {
@@ -52,7 +57,24 @@ export class NetworkService {
       return existing;
     }
 
-    return this.prisma.connection.create({
+    // Get requester info for notification
+    const requester = await this.prisma.user.findUnique({
+      where: { id: requesterId },
+      include: {
+        studentProfile: {
+          select: {
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+    });
+
+    const requesterName = requester?.studentProfile?.firstName && requester?.studentProfile?.lastName
+      ? `${requester.studentProfile.firstName} ${requester.studentProfile.lastName}`
+      : requester?.email?.split('@')[0] || 'Someone';
+
+    const connection = await this.prisma.connection.create({
       data: {
         requesterId,
         receiverId,
@@ -60,10 +82,55 @@ export class NetworkService {
         message,
       },
     });
+
+    // Send notification to receiver
+    try {
+      await this.notificationsService.createNotification(receiverId, {
+        title: 'New Connection Request',
+        message: `${requesterName} sent you a connection request`,
+        type: NotificationType.SYSTEM,
+      });
+    } catch (error) {
+      console.error('Error sending notification:', error);
+      // Don't fail the connection request if notification fails
+    }
+
+    return connection;
   }
 
   async acceptConnection(userId: string, connectionId: string) {
-    return this.prisma.connection.updateMany({
+    // Get connection details before updating
+    const connection = await this.prisma.connection.findUnique({
+      where: { id: connectionId },
+      include: {
+        requester: {
+          include: {
+            studentProfile: {
+              select: {
+                firstName: true,
+                lastName: true,
+              },
+            },
+          },
+        },
+        receiver: {
+          include: {
+            studentProfile: {
+              select: {
+                firstName: true,
+                lastName: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!connection || connection.receiverId !== userId || connection.status !== ConnectionStatus.PENDING) {
+      throw new Error('Invalid connection request');
+    }
+
+    const updated = await this.prisma.connection.updateMany({
       where: {
         id: connectionId,
         receiverId: userId,
@@ -73,6 +140,24 @@ export class NetworkService {
         status: ConnectionStatus.ACCEPTED,
       },
     });
+
+    // Send notification to requester
+    const receiverName = connection.receiver?.studentProfile?.firstName && connection.receiver?.studentProfile?.lastName
+      ? `${connection.receiver.studentProfile.firstName} ${connection.receiver.studentProfile.lastName}`
+      : connection.receiver?.email?.split('@')[0] || 'Someone';
+
+    try {
+      await this.notificationsService.createNotification(connection.requesterId, {
+        title: 'Connection Accepted',
+        message: `${receiverName} accepted your connection request`,
+        type: NotificationType.SYSTEM,
+      });
+    } catch (error) {
+      console.error('Error sending notification:', error);
+      // Don't fail the connection accept if notification fails
+    }
+
+    return updated;
   }
 
   async declineConnection(userId: string, connectionId: string) {
@@ -119,7 +204,8 @@ export class NetworkService {
   }
 
   async getConnectionRequests(userId: string) {
-    return this.prisma.connection.findMany({
+    // Get received requests (pending)
+    const receivedRequests = await this.prisma.connection.findMany({
       where: {
         receiverId: userId,
         status: ConnectionStatus.PENDING,
@@ -133,6 +219,27 @@ export class NetworkService {
       },
       orderBy: { createdAt: 'desc' },
     });
+
+    // Get sent requests (pending - not accepted)
+    const sentRequests = await this.prisma.connection.findMany({
+      where: {
+        requesterId: userId,
+        status: ConnectionStatus.PENDING,
+      },
+      include: {
+        receiver: {
+          include: {
+            studentProfile: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return {
+      received: receivedRequests,
+      sent: sentRequests,
+    };
   }
 
   async generateUserCard(userId: string) {
@@ -208,14 +315,29 @@ export class NetworkService {
       
       // If a specific userType filter is provided (and it's not ADMIN), apply it
       if (filters?.userType && filters.userType !== 'ADMIN') {
-      where.userType = filters.userType;
+        where.userType = filters.userType;
       }
     }
 
-    if (filters?.search) {
-      where.OR = [
-        { email: { contains: filters.search, mode: 'insensitive' } },
-        { mobile: { contains: filters.search, mode: 'insensitive' } },
+    // Add search functionality
+    if (filters?.search && filters.search.trim()) {
+      const searchTerm = filters.search.trim();
+      where.AND = [
+        ...(where.AND || []),
+        {
+          OR: [
+            { email: { contains: searchTerm, mode: 'insensitive' } },
+            { mobile: { contains: searchTerm, mode: 'insensitive' } },
+            {
+              studentProfile: {
+                OR: [
+                  { firstName: { contains: searchTerm, mode: 'insensitive' } },
+                  { lastName: { contains: searchTerm, mode: 'insensitive' } },
+                ],
+              },
+            },
+          ],
+        },
       ];
     }
 

@@ -56,7 +56,8 @@ export class FileController {
   async uploadFile(@UploadedFile() file: Express.Multer.File) {
     if (!file) {
       logger.error('No file provided in upload request');
-      throw new BadRequestException('No file provided. Please select a file to upload.');
+      // Check if request has any files at all
+      throw new BadRequestException('No file provided. Please select a file to upload. Make sure the form field is named "file".');
     }
 
     logger.log(`Uploading file: ${file.originalname}, size: ${file.size} bytes, type: ${file.mimetype}`);

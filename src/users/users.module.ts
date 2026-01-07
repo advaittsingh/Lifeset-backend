@@ -4,9 +4,10 @@ import { UsersController } from './users.controller';
 import { UsersService } from './users.service';
 import { NetworkController } from './network.controller';
 import { NetworkService } from './network.service';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, NotificationsModule],
   providers: [UsersService, NetworkService],
   controllers: [UsersController, NetworkController],
   exports: [UsersService, NetworkService],

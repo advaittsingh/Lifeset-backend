@@ -18,6 +18,12 @@ export class McqController {
     return this.mcqService.getCategories();
   }
 
+  @Get('questions/list')
+  @ApiOperation({ summary: 'Get MCQ questions list (lightweight, optimized for list views)' })
+  async getQuestionsList(@Query() filters: any) {
+    return this.mcqService.getQuestionsList(filters);
+  }
+
   @Get('questions')
   @ApiOperation({ summary: 'Get MCQ questions' })
   async getQuestions(

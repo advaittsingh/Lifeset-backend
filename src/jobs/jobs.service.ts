@@ -34,6 +34,126 @@ export class JobsService {
     });
   }
 
+  // Lightweight list endpoint for Jobs (optimized for list views)
+  async getJobsList(filters: {
+    search?: string;
+    location?: string;
+    skills?: string[];
+    page?: number;
+    limit?: number;
+    type?: 'JOB' | 'INTERNSHIP' | 'FREELANCING' | 'GOVT_JOB';
+    excludeType?: 'JOB' | 'INTERNSHIP' | 'FREELANCING' | 'GOVT_JOB';
+  }) {
+    const page = parseInt(String(filters.page || 1), 10);
+    const limit = parseInt(String(filters.limit || 20), 10);
+    const skip = (page - 1) * limit;
+
+    const postFilter: any = { 
+      isActive: true,
+      postType: { in: ['JOB', 'INTERNSHIP', 'FREELANCING', 'GOVT_JOB'] },
+    };
+    
+    if (filters.excludeType) {
+      postFilter.postType = { 
+        in: ['JOB', 'INTERNSHIP', 'FREELANCING', 'GOVT_JOB'].filter(t => t !== filters.excludeType)
+      };
+    } else if (filters.type) {
+      if (filters.type === 'GOVT_JOB') {
+        postFilter.postType = 'GOVT_JOB';
+      } else {
+        postFilter.postType = filters.type;
+      }
+    }
+
+    if (filters.search) {
+      postFilter.OR = [
+        { title: { contains: filters.search, mode: 'insensitive' } },
+        { description: { contains: filters.search, mode: 'insensitive' } },
+      ];
+    }
+
+    const [posts, total] = await Promise.all([
+      this.prisma.post.findMany({
+        where: postFilter,
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          postType: true,
+          images: true,
+          createdAt: true,
+          updatedAt: true,
+          metadata: true,
+          user: {
+            select: {
+              id: true,
+              profileImage: true,
+            },
+          },
+          jobPost: {
+            select: {
+              id: true,
+              location: true,
+              salaryMin: true,
+              salaryMax: true,
+              experience: true,
+              skills: true,
+              views: true,
+              applications: true,
+            },
+          },
+          _count: {
+            select: {
+              applications: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip,
+        take: limit,
+      }),
+      this.prisma.post.count({ where: postFilter }),
+    ]);
+
+    // Transform and truncate for list view
+    const jobs = posts.map((post) => {
+      const jobPost = post.jobPost;
+      const metadata = post.metadata as any || {};
+      
+      // Truncate description to 200 chars
+      const truncatedDescription = post.description && post.description.length > 200
+        ? post.description.substring(0, 200) + '...'
+        : post.description;
+
+      return {
+        id: jobPost?.id || post.id,
+        postId: post.id,
+        jobTitle: post.title,
+        jobDescription: truncatedDescription,
+        location: jobPost?.location || metadata.jobLocation || null,
+        salaryMin: jobPost?.salaryMin || metadata.salaryMin || null,
+        salaryMax: jobPost?.salaryMax || metadata.salaryMax || null,
+        experience: jobPost?.experience || metadata.experience || null,
+        skills: jobPost?.skills || metadata.skills || [],
+        views: jobPost?.views || 0,
+        applications: jobPost?.applications || post._count.applications || 0,
+        createdAt: post.createdAt,
+        postType: post.postType,
+        user: post.user,
+      };
+    });
+
+    return {
+      data: jobs,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
   async getJobs(filters: {
     search?: string;
     location?: string;
@@ -81,7 +201,15 @@ export class JobsService {
         where: postFilter,
         skip,
         take: limit,
-        include: {
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          postType: true,
+          images: true,
+          createdAt: true,
+          updatedAt: true,
+          metadata: true,
           user: {
             select: {
               id: true,
@@ -90,7 +218,18 @@ export class JobsService {
             },
           },
           jobPost: {
-            include: {
+            select: {
+              id: true,
+              jobTitle: true,
+              jobDescription: true,
+              location: true,
+              salaryMin: true,
+              salaryMax: true,
+              experience: true,
+              skills: true,
+              applicationDeadline: true,
+              views: true,
+              applications: true,
               _count: {
                 select: {
                   jobApplications: true,

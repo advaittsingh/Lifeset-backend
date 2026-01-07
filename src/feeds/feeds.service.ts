@@ -193,6 +193,105 @@ export class FeedsService {
     }
   }
 
+  // Lightweight list endpoint for Feeds (optimized for list views)
+  async getFeedsList(filters: {
+    type?: FeedType;
+    search?: string;
+    category?: string;
+    tags?: string[];
+    college?: string;
+    recency?: 'asc' | 'desc';
+    page?: number;
+    limit?: number;
+    userId?: string;
+  }, userId?: string) {
+    const page = parseInt(String(filters.page || 1), 10);
+    const limit = parseInt(String(filters.limit || 20), 10);
+    const skip = (page - 1) * limit;
+
+    const where: any = {
+      isActive: true,
+    };
+
+    if (filters.type) {
+      where.postType = filters.type;
+    }
+
+    const targetUserId = filters.userId || userId;
+    if (targetUserId) {
+      where.userId = targetUserId;
+    }
+
+    if (filters.search) {
+      where.OR = [
+        { title: { contains: filters.search, mode: 'insensitive' } },
+        { description: { contains: filters.search, mode: 'insensitive' } },
+      ];
+    }
+
+    if (filters.category) {
+      where.categoryId = filters.category;
+    }
+
+    const [feeds, total] = await Promise.all([
+      this.prisma.post.findMany({
+        where,
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          postType: true,
+          images: true,
+          createdAt: true,
+          updatedAt: true,
+          category: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+          user: {
+            select: {
+              id: true,
+              profileImage: true,
+            },
+          },
+          _count: {
+            select: {
+              likes: true,
+              comments: true,
+              bookmarks: true,
+            },
+          },
+        },
+        orderBy: {
+          createdAt: filters.recency === 'asc' ? 'asc' : 'desc',
+        },
+        skip,
+        take: limit,
+      }),
+      this.prisma.post.count({ where }),
+    ]);
+
+    // Truncate description to 200 chars for list view
+    const enhancedFeeds = feeds.map(feed => ({
+      ...feed,
+      description: feed.description && feed.description.length > 200
+        ? feed.description.substring(0, 200) + '...'
+        : feed.description,
+    }));
+
+    return {
+      data: enhancedFeeds,
+      pagination: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit),
+      },
+    };
+  }
+
   async getFeeds(filters: {
     type?: FeedType;
     search?: string;
@@ -202,6 +301,7 @@ export class FeedsService {
     recency?: 'asc' | 'desc';
     page?: number;
     limit?: number;
+    userId?: string; // Filter by user ID to get user's own posts
     // Job-specific filters
     isPublic?: boolean;
     isPrivate?: boolean;
@@ -221,6 +321,19 @@ export class FeedsService {
 
     if (filters.type) {
       where.postType = filters.type;
+    }
+
+    // Filter by userId FIRST if provided (for getting user's own posts)
+    // Priority: filters.userId (from query param) > userId (from auth context)
+    // This ensures userId filter is always applied and not overridden by other filters
+    const targetUserId = filters.userId || userId;
+    if (targetUserId) {
+      where.userId = targetUserId;
+      // Log for debugging
+      console.log('[FeedsService] Filtering posts by userId:', targetUserId, {
+        fromQuery: !!filters.userId,
+        fromAuth: !!userId && !filters.userId,
+      });
     }
 
     if (filters.search) {
@@ -259,6 +372,11 @@ export class FeedsService {
       }
     }
 
+    // Log the where clause for debugging when userId filter is applied
+    if (targetUserId) {
+      console.log('[FeedsService] Query where clause:', JSON.stringify(where, null, 2));
+    }
+
     const [feeds, total] = await Promise.all([
       this.prisma.post.findMany({
         where,
@@ -288,6 +406,11 @@ export class FeedsService {
       }),
       this.prisma.post.count({ where }),
     ]);
+
+    // Log results when userId filter is applied
+    if (targetUserId) {
+      console.log('[FeedsService] Posts found for userId:', targetUserId, 'Total:', total);
+    }
 
     return {
       data: feeds,

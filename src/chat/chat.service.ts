@@ -1,10 +1,15 @@
 import { Injectable, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { ConnectionStatus } from '@prisma/client';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '@/shared';
 
 @Injectable()
 export class ChatService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notificationsService: NotificationsService,
+  ) {}
 
   async sendMessage(senderId: string, receiverId: string, message: string, messageType: string = 'text') {
     // Check if users are connected
@@ -21,7 +26,24 @@ export class ChatService {
       throw new ForbiddenException('Users must be connected to send messages');
     }
 
-    return this.prisma.chatMessage.create({
+    // Get sender info for notification
+    const sender = await this.prisma.user.findUnique({
+      where: { id: senderId },
+      include: {
+        studentProfile: {
+          select: {
+            firstName: true,
+            lastName: true,
+          },
+        },
+      },
+    });
+
+    const senderName = sender?.studentProfile?.firstName && sender?.studentProfile?.lastName
+      ? `${sender.studentProfile.firstName} ${sender.studentProfile.lastName}`
+      : sender?.email?.split('@')[0] || 'Someone';
+
+    const createdMessage = await this.prisma.chatMessage.create({
       data: {
         senderId,
         receiverId,
@@ -29,6 +51,20 @@ export class ChatService {
         messageType,
       },
     });
+
+    // Send notification to receiver
+    try {
+      await this.notificationsService.createNotification(receiverId, {
+        title: 'New Message',
+        message: `${senderName}: ${message.substring(0, 100)}${message.length > 100 ? '...' : ''}`,
+        type: NotificationType.CHAT,
+      });
+    } catch (error) {
+      console.error('Error sending notification:', error);
+      // Don't fail the message send if notification fails
+    }
+
+    return createdMessage;
   }
 
   async getChatHistory(userId1: string, userId2: string, limit: number = 50) {
@@ -117,17 +153,25 @@ export class ChatService {
 
         const partner = await this.prisma.user.findUnique({
           where: { id: partnerId },
-          select: {
-            id: true,
-            email: true,
-            mobile: true,
-            profileImage: true,
+          include: {
+            studentProfile: {
+              include: {
+                college: true,
+                course: true,
+              },
+            },
           },
         });
 
         return {
-          partner,
-          lastMessage,
+          id: `${userId}-${partnerId}`,
+          senderId: userId,
+          receiverId: partnerId,
+          // Partner is always the other user (receiver in this case)
+          sender: null,
+          receiver: partner,
+          lastMessage: lastMessage?.message || '',
+          lastMessageTime: lastMessage?.createdAt,
           unreadCount,
         };
       }),
@@ -176,6 +220,20 @@ export class ChatService {
       where: {
         id: messageId,
         receiverId: userId,
+      },
+      data: {
+        isRead: true,
+        readAt: new Date(),
+      },
+    });
+  }
+
+  async markAllAsRead(userId: string, otherUserId: string) {
+    return this.prisma.chatMessage.updateMany({
+      where: {
+        senderId: otherUserId,
+        receiverId: userId,
+        isRead: false,
       },
       data: {
         isRead: true,

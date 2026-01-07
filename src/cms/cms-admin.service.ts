@@ -1238,42 +1238,139 @@ export class CmsAdminService {
       throw new NotFoundException('Category not found');
     }
 
-    // Check if category has sub-categories (children)
-    const subCategoryCount = await this.prisma.wallCategory.count({
-      where: { parentCategoryId: id },
-    });
+    // Use transaction to ensure atomicity of cascading deletes
+    return await this.prisma.$transaction(async (tx) => {
+      let deletedCounts = {
+        subcategories: 0,
+        chapters: 0,
+        posts: 0,
+        mcqQuestions: 0,
+      };
 
-    if (subCategoryCount > 0) {
-      throw new ConflictException(`Cannot delete category: it has ${subCategoryCount} sub-category(ies) tagged with it. Please delete or reassign the sub-categories first.`);
-    }
+      // If this is a parent category, delete all subcategories first
+      if (!category.parentCategoryId) {
+        const subCategories = await tx.wallCategory.findMany({
+          where: { parentCategoryId: id },
+        });
 
-    // Check if this is a sub-category and has chapters
-    if (category.parentCategoryId) {
-      const chapterCount = await this.prisma.chapter.count({
-        where: { subCategoryId: id },
-      });
+        for (const subCategory of subCategories) {
+          // Delete chapters for this subcategory
+          try {
+            const chapters = await (tx as any).chapter.findMany({
+              where: { subCategoryId: subCategory.id },
+            });
+            for (const chapter of chapters) {
+              await (tx as any).chapter.delete({ where: { id: chapter.id } });
+              deletedCounts.chapters++;
+            }
+          } catch (error: any) {
+            // Chapter table might not exist, ignore
+            this.logger.warn(`Could not delete chapters: ${error.message}`);
+          }
 
-      if (chapterCount > 0) {
-        throw new ConflictException(`Cannot delete sub-category: it has ${chapterCount} chapter(s) tagged with it. Please delete or reassign the chapters first.`);
+          // Delete posts for this subcategory
+          // Note: JobPost, ExamPost, QuizPost have onDelete: Cascade, so they'll be deleted automatically
+          const subCategoryPosts = await tx.post.findMany({
+            where: { categoryId: subCategory.id },
+          });
+          for (const post of subCategoryPosts) {
+            try {
+              await tx.post.delete({ where: { id: post.id } });
+              deletedCounts.posts++;
+            } catch (error: any) {
+              this.logger.error(`Failed to delete post ${post.id}: ${error.message}`, error.stack);
+              // Check if it's a foreign key constraint error
+              if (error.code === 'P2003' || error.message?.includes('Foreign key constraint')) {
+                throw new BadRequestException(`Cannot delete category: Post "${post.id}" has related data that prevents deletion. Please remove related data first.`);
+              }
+              throw new BadRequestException(`Cannot delete category: Failed to delete post "${post.id}". ${error.message}`);
+            }
+          }
+
+          // Delete MCQ questions for this subcategory
+          const mcqQuestions = await tx.mcqQuestion.findMany({
+            where: { categoryId: subCategory.id },
+          });
+          for (const mcq of mcqQuestions) {
+            await tx.mcqQuestion.delete({ where: { id: mcq.id } });
+            deletedCounts.mcqQuestions++;
+          }
+
+          // Delete the subcategory
+          await tx.wallCategory.delete({ where: { id: subCategory.id } });
+          deletedCounts.subcategories++;
+        }
+      } else {
+        // This is a subcategory, delete its chapters
+        try {
+          const chapters = await (tx as any).chapter.findMany({
+            where: { subCategoryId: id },
+          });
+          for (const chapter of chapters) {
+            await (tx as any).chapter.delete({ where: { id: chapter.id } });
+            deletedCounts.chapters++;
+          }
+        } catch (error: any) {
+          // Chapter table might not exist, ignore
+          this.logger.warn(`Could not delete chapters: ${error.message}`);
+        }
       }
-    }
 
-    // Check if category has posts
-    const postCount = await this.prisma.post.count({
-      where: { categoryId: id, isActive: true },
+      // Delete posts directly associated with this category
+      // Note: JobPost, ExamPost, QuizPost have onDelete: Cascade, so they'll be deleted automatically
+      const categoryPosts = await tx.post.findMany({
+        where: { categoryId: id },
+      });
+      for (const post of categoryPosts) {
+        try {
+          await tx.post.delete({ where: { id: post.id } });
+          deletedCounts.posts++;
+        } catch (error: any) {
+          this.logger.error(`Failed to delete post ${post.id}: ${error.message}`, error.stack);
+          // Check if it's a foreign key constraint error
+          if (error.code === 'P2003' || error.message?.includes('Foreign key constraint')) {
+            throw new BadRequestException(`Cannot delete category: Post "${post.id}" has related data that prevents deletion. Please remove related data first.`);
+          }
+          throw new BadRequestException(`Cannot delete category: Failed to delete post "${post.id}". ${error.message}`);
+        }
+      }
+
+      // Delete MCQ questions directly associated with this category
+      const categoryMcqQuestions = await tx.mcqQuestion.findMany({
+        where: { categoryId: id },
+      });
+      for (const mcq of categoryMcqQuestions) {
+        await tx.mcqQuestion.delete({ where: { id: mcq.id } });
+        deletedCounts.mcqQuestions++;
+      }
+
+      // Finally, delete the category itself
+      await tx.wallCategory.delete({ where: { id } });
+
+      const messageParts = [];
+      if (deletedCounts.subcategories > 0) {
+        messageParts.push(`${deletedCounts.subcategories} sub-categorie(s)`);
+      }
+      if (deletedCounts.chapters > 0) {
+        messageParts.push(`${deletedCounts.chapters} chapter(s)`);
+      }
+      if (deletedCounts.posts > 0) {
+        messageParts.push(`${deletedCounts.posts} post(s)`);
+      }
+      if (deletedCounts.mcqQuestions > 0) {
+        messageParts.push(`${deletedCounts.mcqQuestions} MCQ question(s)`);
+      }
+
+      const message = messageParts.length > 0
+        ? `Category deleted successfully. Also deleted: ${messageParts.join(', ')}.`
+        : 'Category deleted successfully.';
+
+      return {
+        success: true,
+        message,
+        deleted: deletedCounts,
+      };
     });
-
-    if (postCount > 0) {
-      throw new ConflictException(`Cannot delete category: it is in use by ${postCount} post(s). Set isActive to false instead.`);
-    }
-
-    // Delete the category
-    await this.prisma.wallCategory.delete({ where: { id } });
-
-    return {
-      success: true,
-      message: 'Category deleted successfully',
-    };
   }
 
   // ========== Chapters ==========

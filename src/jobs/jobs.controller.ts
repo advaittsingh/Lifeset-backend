@@ -9,6 +9,12 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 export class JobsController {
   constructor(private readonly jobsService: JobsService) {}
 
+  @Get('list')
+  @ApiOperation({ summary: 'Get jobs list (lightweight, optimized for list views)' })
+  async getJobsList(@Query() filters: any) {
+    return this.jobsService.getJobsList(filters);
+  }
+
   @Get()
   @ApiOperation({ summary: 'Get jobs list' })
   async getJobs(@Query() filters: any) {

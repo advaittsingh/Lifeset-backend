@@ -174,7 +174,8 @@ export class CmsService {
     };
   }
 
-  async getCurrentAffairs(filters?: any, userId?: string) {
+  // Lightweight list endpoint for Current Affairs (optimized for list views)
+  async getCurrentAffairsList(filters?: any, userId?: string) {
     const where: any = { 
       postType: 'CURRENT_AFFAIRS',
       isActive: true,
@@ -202,7 +203,34 @@ export class CmsService {
     const [posts, total] = await Promise.all([
       this.prisma.post.findMany({
         where,
-        include: { user: true, category: true },
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          images: true,
+          createdAt: true,
+          updatedAt: true,
+          category: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+          user: {
+            select: {
+              id: true,
+              profileImage: true,
+            },
+          },
+          metadata: true,
+          _count: {
+            select: {
+              likes: true,
+              comments: true,
+              bookmarks: true,
+            },
+          },
+        },
         orderBy: { createdAt: 'desc' },
         skip,
         take: limit,
@@ -210,13 +238,25 @@ export class CmsService {
       this.prisma.post.count({ where }),
     ]);
 
+    // Filter by language if provided (check metadata) - case-insensitive
+    let filteredPosts = posts;
+    if (filters?.language) {
+      const requestedLanguage = String(filters.language).toUpperCase();
+      filteredPosts = posts.filter(post => {
+        const metadata = (post.metadata as any) || {};
+        const postLanguage = metadata.language ? String(metadata.language).toUpperCase() : null;
+        return postLanguage === requestedLanguage || 
+               (!postLanguage && requestedLanguage === 'ENGLISH');
+      });
+    }
+
     // Get read status for user if provided
     let readStatusMap: Record<string, { isRead: boolean; readAt: Date | null }> = {};
-    if (userId) {
+    if (userId && filteredPosts.length > 0) {
       const readRecords = await this.prisma.postRead.findMany({
         where: {
           userId,
-          postId: { in: posts.map(p => p.id) },
+          postId: { in: filteredPosts.map(p => p.id) },
         },
       });
       readStatusMap = readRecords.reduce((acc, record) => {
@@ -225,13 +265,145 @@ export class CmsService {
       }, {} as Record<string, { isRead: boolean; readAt: Date | null }>);
     }
 
-    // Filter by language if provided (check metadata)
+    // Enhance posts with metadata, truncate description, and add read status
+    const enhancedPosts = filteredPosts.map(post => {
+      const metadata = (post.metadata as any) || {};
+      const readStatus = readStatusMap[post.id] || { isRead: false, readAt: null };
+
+      // Truncate description to 200 chars for list view
+      const truncatedDescription = post.description 
+        ? (post.description.length > 200 ? post.description.substring(0, 200) + '...' : post.description)
+        : '';
+
+      return {
+        ...post,
+        description: truncatedDescription,
+        language: metadata.language || 'ENGLISH',
+        metadata: {
+          ...metadata,
+          // Only include thumbnail, not full content
+          thumbnail: metadata.thumbnail || metadata.image || post.images?.[0],
+        },
+        isRead: readStatus.isRead,
+        readAt: readStatus.readAt,
+      };
+    });
+
+    return {
+      data: enhancedPosts,
+      pagination: {
+        page,
+        limit,
+        total: filteredPosts.length,
+        totalPages: Math.ceil(filteredPosts.length / limit),
+      },
+    };
+  }
+
+  async getCurrentAffairs(filters?: any, userId?: string) {
+    const where: any = { 
+      postType: 'CURRENT_AFFAIRS',
+      isActive: true,
+    };
+    
+    // Filter last 24 hours if requested
+    if (filters?.filterLast24Hours === 'true' || filters?.filterLast24Hours === true) {
+      const yesterday = new Date();
+      yesterday.setHours(yesterday.getHours() - 24);
+      where.createdAt = { gte: yesterday };
+    }
+    
+    if (filters?.categoryId) where.categoryId = filters.categoryId;
+    if (filters?.search) {
+      where.OR = [
+        { title: { contains: filters.search, mode: 'insensitive' } },
+        { description: { contains: filters.search, mode: 'insensitive' } },
+      ];
+    }
+
+    // Note: Language filtering will be done in memory after fetching
+    // because Prisma's JSON filtering is limited. We'll fetch more results
+    // and filter by language case-insensitively.
+
+    const page = parseInt(String(filters?.page || 1), 10);
+    const limit = parseInt(String(filters?.limit || 20), 10);
+    
+    // If language filtering is active, fetch more results to account for filtering
+    // This ensures we get enough results after language filtering
+    const fetchLimit = filters?.language ? limit * 3 : limit;
+    const skip = (page - 1) * limit;
+
+    const [posts, total] = await Promise.all([
+      this.prisma.post.findMany({
+        where,
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          images: true,
+          createdAt: true,
+          updatedAt: true,
+          postType: true,
+          category: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+          user: {
+            select: {
+              id: true,
+              profileImage: true,
+            },
+          },
+          metadata: true,
+          _count: {
+            select: {
+              likes: true,
+              comments: true,
+              bookmarks: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+        skip: filters?.language ? 0 : skip, // Don't skip if filtering by language
+        take: fetchLimit,
+      }),
+      this.prisma.post.count({ where }),
+    ]);
+
+    // Filter by language if provided (check metadata) - case-insensitive
+    // Do this BEFORE getting read status so we only query for relevant posts
     let filteredPosts = posts;
     if (filters?.language) {
+      const requestedLanguage = String(filters.language).toUpperCase();
       filteredPosts = posts.filter(post => {
         const metadata = (post.metadata as any) || {};
-        return metadata.language === filters.language;
+        const postLanguage = metadata.language ? String(metadata.language).toUpperCase() : null;
+        // Match if language matches (case-insensitive) or if no language is set and requesting English
+        return postLanguage === requestedLanguage || 
+               (!postLanguage && requestedLanguage === 'ENGLISH');
       });
+      
+      // Apply pagination after language filtering
+      const startIndex = (page - 1) * limit;
+      const endIndex = startIndex + limit;
+      filteredPosts = filteredPosts.slice(startIndex, endIndex);
+    }
+
+    // Get read status for user if provided - use filtered posts
+    let readStatusMap: Record<string, { isRead: boolean; readAt: Date | null }> = {};
+    if (userId && filteredPosts.length > 0) {
+      const readRecords = await this.prisma.postRead.findMany({
+        where: {
+          userId,
+          postId: { in: filteredPosts.map(p => p.id) },
+        },
+      });
+      readStatusMap = readRecords.reduce((acc, record) => {
+        acc[record.postId] = { isRead: true, readAt: record.readAt };
+        return acc;
+      }, {} as Record<string, { isRead: boolean; readAt: Date | null }>);
     }
 
     // Add searchText and read status to each post
@@ -254,21 +426,27 @@ export class CmsService {
 
       return {
         ...post,
+        // Add language field for easier access in frontend
+        language: metadata.language || 'ENGLISH',
         searchText,
         isRead: readStatus.isRead,
         readAt: readStatus.readAt,
       };
     });
 
-    // Note: Total count doesn't account for language filtering for simplicity
-    // The actual returned data is filtered correctly
+    // Recalculate pagination based on filtered results
+    // If language filtering reduced results, we need to adjust pagination
+    const filteredTotal = filteredPosts.length;
+    
+    // For accurate total count with language filtering, we'd need to count all matching posts
+    // For now, use the filtered count as an approximation
     return {
       data: postsWithMetadata,
       pagination: {
         page,
         limit,
-        total: postsWithMetadata.length, // Use filtered count
-        totalPages: Math.ceil(postsWithMetadata.length / limit),
+        total: filteredTotal, // Use filtered count
+        totalPages: Math.ceil(filteredTotal / limit),
       },
     };
   }
@@ -340,6 +518,137 @@ export class CmsService {
     };
   }
 
+  // Lightweight list endpoint for General Knowledge (optimized for list views)
+  async getGeneralKnowledgeList(filters?: any) {
+    try {
+      const where: any = { 
+        postType: 'COLLEGE_FEED',
+        isActive: true,
+      };
+      if (filters?.categoryId) where.categoryId = filters.categoryId;
+      if (filters?.subCategoryId) {
+        where.metadata = { path: ['subCategoryId'], equals: filters.subCategoryId };
+      }
+      if (filters?.chapterId) {
+        where.metadata = { path: ['chapterId'], equals: filters.chapterId };
+      }
+      if (filters?.search) {
+        where.OR = [
+          { title: { contains: filters.search, mode: 'insensitive' } },
+          { description: { contains: filters.search, mode: 'insensitive' } },
+        ];
+      }
+
+      const page = parseInt(String(filters?.page || 1), 10);
+      const limit = parseInt(String(filters?.limit || 20), 10);
+      const skip = (page - 1) * limit;
+
+      const [posts, total] = await Promise.all([
+        this.prisma.post.findMany({
+          where,
+          select: {
+            id: true,
+            title: true,
+            description: true,
+            images: true,
+            createdAt: true,
+            updatedAt: true,
+            category: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+            user: {
+              select: {
+                id: true,
+                profileImage: true,
+              },
+            },
+            metadata: true,
+            _count: {
+              select: {
+                likes: true,
+                comments: true,
+                bookmarks: true,
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+        }),
+        this.prisma.post.count({ where }),
+      ]);
+
+      // Batch fetch subcategories and chapters to avoid N+1
+      const subCategoryIds = posts
+        .map(p => (p.metadata as any)?.subCategoryId)
+        .filter(Boolean);
+      const chapterIds = posts
+        .map(p => (p.metadata as any)?.chapterId)
+        .filter(Boolean);
+
+      const [subCategories, chapters] = await Promise.all([
+        subCategoryIds.length > 0
+          ? this.prisma.wallCategory.findMany({
+              where: { id: { in: subCategoryIds } },
+              select: { id: true, name: true },
+            })
+          : [],
+        chapterIds.length > 0
+          ? this.prisma.chapter.findMany({
+              where: { id: { in: chapterIds } },
+              select: { id: true, name: true },
+            })
+          : [],
+      ]);
+
+      const subCategoryMap = new Map<string, string>(subCategories.map(sc => [sc.id, sc.name] as [string, string]));
+      const chapterMap = new Map<string, string>(chapters.map(ch => [ch.id, ch.name] as [string, string]));
+
+      // Enhance posts with metadata and truncate description
+      const enhancedPosts = posts.map(post => {
+        const metadata = (post.metadata as any) || {};
+        const subCategoryId = metadata.subCategoryId;
+        const chapterId = metadata.chapterId;
+        
+        const subCategoryName = subCategoryMap.get(subCategoryId) || metadata.subCategory || '';
+        const sectionName = chapterMap.get(chapterId) || metadata.section || metadata.sectionName || '';
+
+        // Truncate description to 200 chars for list view
+        const truncatedDescription = post.description 
+          ? (post.description.length > 200 ? post.description.substring(0, 200) + '...' : post.description)
+          : '';
+
+        return {
+          ...post,
+          description: truncatedDescription,
+          metadata: {
+            ...metadata,
+            subCategoryName,
+            sectionName,
+            // Only include thumbnail, not full content
+            thumbnail: metadata.thumbnail || metadata.image || post.images?.[0],
+          },
+        };
+      });
+
+      return {
+        data: enhancedPosts,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
+      };
+    } catch (error: any) {
+      this.logger.error(`Error fetching general knowledge list: ${error.message}`, error.stack);
+      throw new BadRequestException(`Failed to fetch general knowledge list: ${error.message}`);
+    }
+  }
+
   async getGeneralKnowledge(filters?: any) {
     try {
       const where: any = { 
@@ -362,18 +671,96 @@ export class CmsService {
       const [posts, total] = await Promise.all([
         this.prisma.post.findMany({
           where,
-          include: { user: true, category: true },
+          select: {
+            id: true,
+            title: true,
+            description: true,
+            images: true,
+            createdAt: true,
+            updatedAt: true,
+            postType: true,
+            category: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+            user: {
+              select: {
+                id: true,
+                profileImage: true,
+              },
+            },
+            metadata: true,
+            _count: {
+              select: {
+                likes: true,
+                comments: true,
+                bookmarks: true,
+              },
+            },
+          },
           orderBy: { createdAt: 'desc' },
           skip,
           take: limit,
         }),
         this.prisma.post.count({ where }),
       ]);
+      
+      // Batch fetch subcategories and chapters to avoid N+1 queries
+      const subCategoryIds = posts
+        .map(p => (p.metadata as any)?.subCategoryId)
+        .filter(Boolean);
+      const chapterIds = posts
+        .map(p => (p.metadata as any)?.chapterId)
+        .filter(Boolean);
+
+      const [subCategories, chapters] = await Promise.all([
+        subCategoryIds.length > 0
+          ? this.prisma.wallCategory.findMany({
+              where: { id: { in: subCategoryIds } },
+              select: { id: true, name: true },
+            })
+          : [],
+        chapterIds.length > 0
+          ? this.prisma.chapter.findMany({
+              where: { id: { in: chapterIds } },
+              select: { id: true, name: true },
+            })
+          : [],
+      ]);
+
+      // Create lookup maps for O(1) access
+      const subCategoryMap = new Map<string, string>(subCategories.map(sc => [sc.id, sc.name] as [string, string]));
+      const chapterMap = new Map<string, string>(chapters.map(ch => [ch.id, ch.name] as [string, string]));
+
+      // Enhance posts using maps (O(1) lookup instead of N queries)
+      const enhancedPosts = posts.map(post => {
+        const metadata = (post.metadata as any) || {};
+        const subCategoryId = metadata.subCategoryId;
+        const chapterId = metadata.chapterId;
+        
+        const subCategoryName = subCategoryMap.get(subCategoryId) || metadata.subCategory || '';
+        const sectionName = chapterMap.get(chapterId) || metadata.section || metadata.sectionName || '';
+        
+        // Update metadata with names
+        const updatedMetadata = {
+          ...metadata,
+          ...(subCategoryName && { subCategory: subCategoryName, subCategoryName }),
+          ...(sectionName && { section: sectionName, sectionName }),
+        };
+        
+        return {
+          ...post,
+          metadata: updatedMetadata,
+          subCategory: subCategoryName ? { name: subCategoryName } : null,
+        };
+      });
 
       // Filter by language if provided (check metadata)
-      let filteredPosts = posts;
+      let filteredPosts = enhancedPosts;
       if (filters?.language) {
-        filteredPosts = posts.filter(post => {
+        filteredPosts = enhancedPosts.filter(post => {
           const metadata = (post.metadata as any) || {};
           return metadata.language === filters.language;
         });
@@ -495,11 +882,15 @@ export class CmsService {
       return metadata.isPublished !== false; // Include if not explicitly false
     });
 
-    // Filter by language if provided
+    // Filter by language if provided - case-insensitive
     if (language) {
+      const requestedLanguage = String(language).toUpperCase();
       publishedPosts = publishedPosts.filter(post => {
         const metadata = post.metadata as any || {};
-        return metadata.language === language;
+        const postLanguage = metadata.language ? String(metadata.language).toUpperCase() : null;
+        // Match if language matches (case-insensitive) or if no language is set and requesting English
+        return postLanguage === requestedLanguage || 
+               (!postLanguage && requestedLanguage === 'ENGLISH');
       });
     }
 

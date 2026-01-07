@@ -49,5 +49,11 @@ export class ChatController {
   async markAsRead(@CurrentUser() user: any, @Param('id') id: string) {
     return this.chatService.markAsRead(user.id, id);
   }
+
+  @Post(':userId/mark-all-read')
+  @ApiOperation({ summary: 'Mark all messages as read for a conversation' })
+  async markAllAsRead(@CurrentUser() user: any, @Param('userId') userId: string) {
+    return this.chatService.markAllAsRead(user.id, userId);
+  }
 }
 
