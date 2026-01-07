@@ -1232,16 +1232,6 @@ export class CmsAdminService {
   async deleteWallCategory(id: string) {
     const category = await this.prisma.wallCategory.findUnique({
       where: { id },
-      include: {
-        _count: {
-          select: {
-            posts: true,
-            children: true,
-            chapters: true,
-            mcqQuestions: true,
-          },
-        },
-      },
     });
 
     if (!category) {
@@ -1249,7 +1239,10 @@ export class CmsAdminService {
     }
 
     // Check if category has posts (which might have constraints preventing deletion)
-    const postCount = category._count?.posts || 0;
+    const postCount = await this.prisma.post.count({
+      where: { categoryId: id },
+    });
+    
     if (postCount > 0) {
       // Check if any posts have related data that might prevent deletion
       const postsWithJobPost = await this.prisma.post.count({
