@@ -1261,6 +1261,7 @@ export class CmsAdminService {
     }
 
     // Use transaction to ensure atomicity of cascading deletes
+    // Using deleteMany for better performance and to avoid transaction timeout issues
     try {
       return await this.prisma.$transaction(async (tx) => {
         let deletedCounts = {
@@ -1270,123 +1271,92 @@ export class CmsAdminService {
           mcqQuestions: 0,
         };
 
-      // If this is a parent category, delete all subcategories first
-      if (!category.parentCategoryId) {
-        const subCategories = await tx.wallCategory.findMany({
-          where: { parentCategoryId: id },
-        });
+        // If this is a parent category, delete all subcategories first
+        if (!category.parentCategoryId) {
+          const subCategories = await tx.wallCategory.findMany({
+            where: { parentCategoryId: id },
+            select: { id: true },
+          });
 
-        for (const subCategory of subCategories) {
-          // Delete chapters for this subcategory
-          try {
-            const chapters = await (tx as any).chapter.findMany({
-              where: { subCategoryId: subCategory.id },
-            });
-            for (const chapter of chapters) {
-              await (tx as any).chapter.delete({ where: { id: chapter.id } });
-              deletedCounts.chapters++;
+          const subCategoryIds = subCategories.map(sc => sc.id);
+          deletedCounts.subcategories = subCategoryIds.length;
+
+          if (subCategoryIds.length > 0) {
+            // Delete chapters for all subcategories (batch delete)
+            try {
+              const chapterResult = await (tx as any).chapter.deleteMany({
+                where: { subCategoryId: { in: subCategoryIds } },
+              });
+              deletedCounts.chapters = chapterResult.count || 0;
+            } catch (error: any) {
+              // Chapter table might not exist, ignore
+              this.logger.warn(`Could not delete chapters: ${error.message}`);
             }
+
+            // Delete posts for all subcategories (batch delete)
+            // Note: JobPost, ExamPost, QuizPost have onDelete: Cascade, so they'll be deleted automatically
+            const postsResult = await tx.post.deleteMany({
+              where: { categoryId: { in: subCategoryIds } },
+            });
+            deletedCounts.posts = postsResult.count || 0;
+
+            // Delete MCQ questions for all subcategories (batch delete)
+            const mcqResult = await tx.mcqQuestion.deleteMany({
+              where: { categoryId: { in: subCategoryIds } },
+            });
+            deletedCounts.mcqQuestions = mcqResult.count || 0;
+
+            // Delete all subcategories (batch delete)
+            await tx.wallCategory.deleteMany({
+              where: { id: { in: subCategoryIds } },
+            });
+          }
+        } else {
+          // This is a subcategory, delete its chapters
+          try {
+            const chapterResult = await (tx as any).chapter.deleteMany({
+              where: { subCategoryId: id },
+            });
+            deletedCounts.chapters = chapterResult.count || 0;
           } catch (error: any) {
             // Chapter table might not exist, ignore
             this.logger.warn(`Could not delete chapters: ${error.message}`);
           }
-
-          // Delete posts for this subcategory
-          // Note: JobPost, ExamPost, QuizPost have onDelete: Cascade, so they'll be deleted automatically
-          const subCategoryPosts = await tx.post.findMany({
-            where: { categoryId: subCategory.id },
-          });
-          for (const post of subCategoryPosts) {
-            try {
-              await tx.post.delete({ where: { id: post.id } });
-              deletedCounts.posts++;
-            } catch (error: any) {
-              this.logger.error(`Failed to delete post ${post.id}: ${error.message}`, error.stack);
-              // Check if it's a foreign key constraint error
-              if (error.code === 'P2003' || error.message?.includes('Foreign key constraint')) {
-                throw new BadRequestException(`Cannot delete category: Post "${post.id}" has related data that prevents deletion. Please remove related data first.`);
-              }
-              throw new BadRequestException(`Cannot delete category: Failed to delete post "${post.id}". ${error.message}`);
-            }
-          }
-
-          // Delete MCQ questions for this subcategory
-          const mcqQuestions = await tx.mcqQuestion.findMany({
-            where: { categoryId: subCategory.id },
-          });
-          for (const mcq of mcqQuestions) {
-            await tx.mcqQuestion.delete({ where: { id: mcq.id } });
-            deletedCounts.mcqQuestions++;
-          }
-
-          // Delete the subcategory
-          await tx.wallCategory.delete({ where: { id: subCategory.id } });
-          deletedCounts.subcategories++;
         }
-      } else {
-        // This is a subcategory, delete its chapters
-        try {
-          const chapters = await (tx as any).chapter.findMany({
-            where: { subCategoryId: id },
-          });
-          for (const chapter of chapters) {
-            await (tx as any).chapter.delete({ where: { id: chapter.id } });
-            deletedCounts.chapters++;
-          }
-        } catch (error: any) {
-          // Chapter table might not exist, ignore
-          this.logger.warn(`Could not delete chapters: ${error.message}`);
+
+        // Delete posts directly associated with this category (batch delete)
+        // Note: JobPost, ExamPost, QuizPost have onDelete: Cascade, so they'll be deleted automatically
+        const categoryPostsResult = await tx.post.deleteMany({
+          where: { categoryId: id },
+        });
+        deletedCounts.posts += categoryPostsResult.count || 0;
+
+        // Delete MCQ questions directly associated with this category (batch delete)
+        const categoryMcqResult = await tx.mcqQuestion.deleteMany({
+          where: { categoryId: id },
+        });
+        deletedCounts.mcqQuestions += categoryMcqResult.count || 0;
+
+        // Finally, delete the category itself
+        await tx.wallCategory.delete({ where: { id } });
+
+        const messageParts = [];
+        if (deletedCounts.subcategories > 0) {
+          messageParts.push(`${deletedCounts.subcategories} sub-categorie(s)`);
         }
-      }
-
-      // Delete posts directly associated with this category
-      // Note: JobPost, ExamPost, QuizPost have onDelete: Cascade, so they'll be deleted automatically
-      const categoryPosts = await tx.post.findMany({
-        where: { categoryId: id },
-      });
-      for (const post of categoryPosts) {
-        try {
-          await tx.post.delete({ where: { id: post.id } });
-          deletedCounts.posts++;
-        } catch (error: any) {
-          this.logger.error(`Failed to delete post ${post.id}: ${error.message}`, error.stack);
-          // Check if it's a foreign key constraint error
-          if (error.code === 'P2003' || error.message?.includes('Foreign key constraint')) {
-            throw new BadRequestException(`Cannot delete category: Post "${post.id}" has related data that prevents deletion. Please remove related data first.`);
-          }
-          throw new BadRequestException(`Cannot delete category: Failed to delete post "${post.id}". ${error.message}`);
+        if (deletedCounts.chapters > 0) {
+          messageParts.push(`${deletedCounts.chapters} chapter(s)`);
         }
-      }
+        if (deletedCounts.posts > 0) {
+          messageParts.push(`${deletedCounts.posts} post(s)`);
+        }
+        if (deletedCounts.mcqQuestions > 0) {
+          messageParts.push(`${deletedCounts.mcqQuestions} MCQ question(s)`);
+        }
 
-      // Delete MCQ questions directly associated with this category
-      const categoryMcqQuestions = await tx.mcqQuestion.findMany({
-        where: { categoryId: id },
-      });
-      for (const mcq of categoryMcqQuestions) {
-        await tx.mcqQuestion.delete({ where: { id: mcq.id } });
-        deletedCounts.mcqQuestions++;
-      }
-
-      // Finally, delete the category itself
-      await tx.wallCategory.delete({ where: { id } });
-
-      const messageParts = [];
-      if (deletedCounts.subcategories > 0) {
-        messageParts.push(`${deletedCounts.subcategories} sub-categorie(s)`);
-      }
-      if (deletedCounts.chapters > 0) {
-        messageParts.push(`${deletedCounts.chapters} chapter(s)`);
-      }
-      if (deletedCounts.posts > 0) {
-        messageParts.push(`${deletedCounts.posts} post(s)`);
-      }
-      if (deletedCounts.mcqQuestions > 0) {
-        messageParts.push(`${deletedCounts.mcqQuestions} MCQ question(s)`);
-      }
-
-      const message = messageParts.length > 0
-        ? `Category deleted successfully. Also deleted: ${messageParts.join(', ')}.`
-        : 'Category deleted successfully.';
+        const message = messageParts.length > 0
+          ? `Category deleted successfully. Also deleted: ${messageParts.join(', ')}.`
+          : 'Category deleted successfully.';
 
         return {
           success: true,
@@ -1394,7 +1364,8 @@ export class CmsAdminService {
           deleted: deletedCounts,
         };
       }, {
-        timeout: 30000, // 30 second timeout for large deletions
+        timeout: 60000, // 60 second timeout for large deletions
+        maxWait: 10000, // Maximum time to wait for a transaction slot
       });
     } catch (error: any) {
       this.logger.error(`Error deleting wall category ${id}: ${error.message}`, error.stack);
