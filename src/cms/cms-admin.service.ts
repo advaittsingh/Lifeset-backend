@@ -1395,12 +1395,43 @@ export class CmsAdminService {
         ? `Category deleted successfully. Also deleted: ${messageParts.join(', ')}.`
         : 'Category deleted successfully.';
 
-      return {
-        success: true,
-        message,
-        deleted: deletedCounts,
-      };
-    });
+        return {
+          success: true,
+          message,
+          deleted: deletedCounts,
+        };
+      }, {
+        timeout: 30000, // 30 second timeout for large deletions
+      });
+    } catch (error: any) {
+      this.logger.error(`Error deleting wall category ${id}: ${error.message}`, error.stack);
+      
+      // Handle Prisma errors
+      if (error.code === 'P2003') {
+        throw new BadRequestException(
+          'Cannot delete category: This category has related data that prevents deletion. ' +
+          'Please remove all posts, subcategories, and related content first.'
+        );
+      }
+      
+      // Handle transaction timeout
+      if (error.code === 'P2034') {
+        throw new BadRequestException(
+          'Deletion timed out. The category may have too many related records. ' +
+          'Please try again or contact support.'
+        );
+      }
+      
+      // Re-throw known exceptions
+      if (error instanceof BadRequestException || error instanceof NotFoundException) {
+        throw error;
+      }
+      
+      // Generic error
+      throw new InternalServerErrorException(
+        `Failed to delete category: ${error.message || 'Unknown error occurred'}`
+      );
+    }
   }
 
   // ========== Chapters ==========
