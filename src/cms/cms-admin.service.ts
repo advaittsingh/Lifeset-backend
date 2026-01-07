@@ -1268,13 +1268,14 @@ export class CmsAdminService {
     }
 
     // Use transaction to ensure atomicity of cascading deletes
-    return await this.prisma.$transaction(async (tx) => {
-      let deletedCounts = {
-        subcategories: 0,
-        chapters: 0,
-        posts: 0,
-        mcqQuestions: 0,
-      };
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        let deletedCounts = {
+          subcategories: 0,
+          chapters: 0,
+          posts: 0,
+          mcqQuestions: 0,
+        };
 
       // If this is a parent category, delete all subcategories first
       if (!category.parentCategoryId) {
