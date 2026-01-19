@@ -50,6 +50,13 @@ enum NotificationType {
   EXAM
   SYSTEM
   CONNECTION
+  ADMIN
+  CURRENT_AFFAIRS
+  GENERAL_KNOWLEDGE
+  MCQ
+  GOVT_VACANCY
+  DAILY_DIGEST
+  KNOW_YOURSELF
 }
 
 enum UserStatus {
@@ -67,6 +74,7 @@ model User {
   isActive     Boolean  @default(true)
   isVerified   Boolean  @default(false)
   profileImage String?
+  expoPushToken String? @db.Text
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -179,6 +187,9 @@ model StudentProfile {
   // Media
   introVideo String?
   resume     String?
+
+  // Self Introduction
+  selfIntro  String?  @db.Text
 
   // Legacy education fields (for backward compatibility)
   education10th  Json?
@@ -660,8 +671,9 @@ model CourseCategory {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  courses  Course[]  @relation("CourseCategory")
-  awardeds Awarded[]
+  courses         Course[]         @relation("CourseCategory")
+  awardeds        Awarded[]
+  specialisations Specialisation[]
 }
 
 model Awarded {
@@ -680,18 +692,22 @@ model Awarded {
 }
 
 model Specialisation {
-  id          String   @id @default(uuid())
-  name        String
-  description String?  @db.Text
-  awardedId   String
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id               String   @id @default(uuid())
+  name             String
+  description      String?  @db.Text
+  awardedId        String?
+  courseCategoryId String
+  mainCategory     String?
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
-  awarded Awarded  @relation(fields: [awardedId], references: [id], onDelete: Cascade)
-  courses Course[]
+  awarded       Awarded?       @relation(fields: [awardedId], references: [id], onDelete: Cascade)
+  courseCategory CourseCategory @relation(fields: [courseCategoryId], references: [id], onDelete: Cascade)
+  courses       Course[]
 
   @@index([awardedId])
+  @@index([courseCategoryId])
 }
 
 model CollegeSection {
@@ -1299,4 +1315,17 @@ model AppConfig {
   updatedAt DateTime @updatedAt
 
   @@index([key])
+}
+
+// Sponsor Ad - Stores sponsor advertisement data
+model SponsorAd {
+  id              String   @id @default(uuid())
+  sponsorBacklink String   @db.Text
+  sponsorAdImage  String   @db.Text
+  status          String   @default("inactive") // active, inactive
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
 }

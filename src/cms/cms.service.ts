@@ -153,6 +153,7 @@ export class CmsService {
         : null,
       examDate: metadata.examDate ? new Date(metadata.examDate) : null,
       examName: metadata.examName || null,
+      examLevel: metadata.examLevel || null, // Exam Level field (e.g., "Diploma")
       examFees: metadata.examFees || null,
       vacanciesSeat: metadata.vacanciesSeat || null,
       eligibility: metadata.eligibility || null,
@@ -164,6 +165,7 @@ export class CmsService {
         : null,
       evaluationExamPattern: metadata.evaluationExamPattern || null,
       cutoff: metadata.cutoff || null,
+      applicationLink: metadata.applicationLink || null, // Application Link field (e.g., "https://police.assam.gov.in/")
       createdAt: post.createdAt,
       updatedAt: post.updatedAt,
       post: {
@@ -189,11 +191,36 @@ export class CmsService {
     }
     
     if (filters?.categoryId) where.categoryId = filters.categoryId;
+    
+    // Handle search filter - combine with language filter if both exist
     if (filters?.search) {
       where.OR = [
         { title: { contains: filters.search, mode: 'insensitive' } },
         { description: { contains: filters.search, mode: 'insensitive' } },
       ];
+    }
+
+    // Add language filter to where clause if provided (for accurate total count)
+    // Note: Prisma JSON filtering for null/undefined values is limited, so we do in-memory filtering as fallback
+    if (filters?.language) {
+      const requestedLanguage = String(filters.language).toUpperCase();
+      // For non-ENGLISH languages, filter in database
+      if (requestedLanguage !== 'ENGLISH') {
+        // Use AND logic: combine with existing where clause
+        const languageCondition = { metadata: { path: ['language'], equals: requestedLanguage } };
+        // If we have OR conditions (from search), we need to wrap them properly
+        if (where.OR) {
+          // Create a new AND structure that includes both search OR and language filter
+          where.AND = [
+            { OR: where.OR },
+            languageCondition,
+          ];
+          delete where.OR; // Remove OR from top level since it's now in AND
+        } else {
+          where.metadata = languageCondition.metadata;
+        }
+      }
+      // For ENGLISH, we'll rely on in-memory filtering since null/undefined handling in Prisma JSON is complex
     }
 
     const page = parseInt(String(filters?.page || 1), 10);
@@ -239,6 +266,7 @@ export class CmsService {
     ]);
 
     // Filter by language if provided (check metadata) - case-insensitive
+    // This is a secondary filter in case database filtering didn't catch all cases
     let filteredPosts = posts;
     if (filters?.language) {
       const requestedLanguage = String(filters.language).toUpperCase();
@@ -294,8 +322,8 @@ export class CmsService {
       pagination: {
         page,
         limit,
-        total: filteredPosts.length,
-        totalPages: Math.ceil(filteredPosts.length / limit),
+        total: total, // Use the actual total count from database, not filteredPosts.length
+        totalPages: Math.ceil(total / limit),
       },
     };
   }
@@ -1695,6 +1723,519 @@ export class CmsService {
     limit?: number;
   }) {
     return this.getBookmarkedArticles(userId, { ...filters, type: 'CURRENT_AFFAIRS' });
+  }
+
+  async recordEventInterest(userId: string, eventId: string, interestedAt?: string) {
+    try {
+      // Verify event exists
+      const event = await this.prisma.post.findUnique({
+        where: { id: eventId, postType: 'EVENT' },
+      });
+
+      if (!event) {
+        throw new NotFoundException('College event not found');
+      }
+
+      // Check if interest already recorded
+      const existingInterest = await this.prisma.postInterest.findUnique({
+        where: {
+          userId_postId: {
+            userId,
+            postId: eventId,
+          },
+        },
+      });
+
+      if (existingInterest) {
+        return {
+          success: true,
+          message: 'Interest already recorded',
+          interestId: existingInterest.id,
+        };
+      }
+
+      // Create interest record
+      const interest = await this.prisma.postInterest.create({
+        data: {
+          userId,
+          postId: eventId,
+        },
+      });
+
+      return {
+        success: true,
+        message: 'Interest recorded successfully',
+        interestId: interest.id,
+      };
+    } catch (error: any) {
+      this.logger.error(`Error recording event interest: ${error.message}`, error.stack);
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      throw new BadRequestException(`Failed to record interest: ${error.message}`);
+    }
+  }
+
+  async getRegisteredCollegeEvents(userId: string, filters?: any) {
+    try {
+      // Get all event IDs the user has registered for
+      const userInterests = await this.prisma.postInterest.findMany({
+        where: { userId },
+        select: { postId: true },
+      });
+
+      const registeredEventIds = userInterests.map(i => i.postId);
+
+      if (registeredEventIds.length === 0) {
+        return {
+          data: [],
+          pagination: {
+            page: 1,
+            limit: filters?.limit || 20,
+            total: 0,
+            totalPages: 0,
+          },
+        };
+      }
+
+      const where: any = {
+        postType: 'EVENT',
+        isActive: true,
+        id: { in: registeredEventIds },
+      };
+
+      // Filter by isPublished if provided
+      const showPublishedOnly = filters?.isPublished !== 'false';
+      if (showPublishedOnly) {
+        where.metadata = { path: ['isPublished'], equals: true };
+      }
+
+      if (filters?.collegeId) {
+        where.user = { collegeProfile: { id: filters.collegeId } };
+      }
+
+      if (filters?.search) {
+        where.OR = [
+          { title: { contains: filters.search, mode: 'insensitive' } },
+          { description: { contains: filters.search, mode: 'insensitive' } },
+        ];
+      }
+
+      if (filters?.categoryId) {
+        where.categoryId = filters.categoryId;
+      }
+
+      const page = parseInt(String(filters?.page || 1), 10);
+      const limit = parseInt(String(filters?.limit || 20), 10);
+      const skip = (page - 1) * limit;
+
+      const [events, total] = await Promise.all([
+        this.prisma.post.findMany({
+          where,
+          select: {
+            id: true,
+            title: true,
+            description: true,
+            images: true,
+            postType: true,
+            isActive: true,
+            metadata: true,
+            createdAt: true,
+            updatedAt: true,
+            user: {
+              select: {
+                id: true,
+                email: true,
+                profileImage: true,
+                collegeProfile: {
+                  select: {
+                    id: true,
+                    collegeName: true,
+                    logo: true,
+                  },
+                },
+              },
+            },
+            category: {
+              select: {
+                id: true,
+                name: true,
+              },
+            },
+            _count: {
+              select: {
+                likes: true,
+                comments: true,
+                bookmarks: true,
+                interests: true,
+              },
+            },
+          },
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+        }),
+        this.prisma.post.count({ where }),
+      ]);
+
+      // Format events with metadata and isRegistered flag
+      const formattedEvents = events.map((event: any) => {
+        const metadata = event.metadata as any || {};
+        return {
+          id: event.id,
+          title: event.title,
+          description: event.description,
+          images: event.images || [],
+          postType: event.postType,
+          isPublished: metadata.isPublished !== undefined ? metadata.isPublished : event.isActive,
+          eventDate: metadata.eventDate || null,
+          location: metadata.location || null,
+          collegeId: metadata.collegeId || null,
+          eventDates: metadata.eventDates || null,
+          eventYearRange: metadata.eventYearRange || null,
+          createdAt: event.createdAt,
+          updatedAt: event.updatedAt,
+          user: event.user,
+          category: event.category,
+          isRegistered: true, // All events in this list are registered
+          _count: {
+            ...event._count,
+            registrations: event._count?.interests || 0,
+          },
+        };
+      });
+
+      return {
+        data: formattedEvents,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
+      };
+    } catch (error: any) {
+      this.logger.error(`Error fetching registered college events for user ${userId}: ${error.message}`, error.stack);
+      throw new BadRequestException(`Failed to fetch registered college events: ${error.message}`);
+    }
+  }
+
+  async getDemoVideos() {
+    try {
+      const config = await this.prisma.appConfig.findUnique({
+        where: { key: 'DEMO_VIDEOS' },
+      });
+
+      if (!config) {
+        // Return empty object if no demo videos configured
+        return {};
+      }
+
+      const value = config.value as any;
+      // Return the demo videos object as-is
+      // Expected format: { "myCard": "https://...", "networking": "https://...", ... }
+      return value || {};
+    } catch (error: any) {
+      this.logger.error(`Error fetching demo videos: ${error.message}`, error.stack);
+      // Return empty object on error to prevent frontend from breaking
+      return {};
+    }
+  }
+
+  // ========== College Events ==========
+  async getCollegeEvents(filters?: any, userId?: string) {
+    try {
+      const where: any = {
+        postType: 'EVENT',
+        isActive: true,
+      };
+
+      // Filter by isPublished if provided (default to only published events)
+      const showPublishedOnly = filters?.isPublished !== 'false';
+      if (showPublishedOnly) {
+        where.metadata = { path: ['isPublished'], equals: true };
+      }
+
+      if (filters?.collegeId) {
+        where.user = { collegeProfile: { id: filters.collegeId } };
+      }
+
+      if (filters?.search) {
+        where.OR = [
+          { title: { contains: filters.search, mode: 'insensitive' } },
+          { description: { contains: filters.search, mode: 'insensitive' } },
+        ];
+      }
+
+      if (filters?.categoryId) {
+        where.categoryId = filters.categoryId;
+      }
+
+      const page = parseInt(String(filters?.page || 1), 10);
+      const limit = parseInt(String(filters?.limit || 20), 10);
+      const skip = (page - 1) * limit;
+
+      // Check if we should include registrations
+      const includeRegistrations = filters?.include === 'registrations' || filters?.include?.includes('registrations');
+      
+      // Build select/include based on whether we need registrations
+      const selectInclude: any = {
+        id: true,
+        title: true,
+        description: true,
+        images: true,
+        postType: true,
+        isActive: true,
+        metadata: true,
+        createdAt: true,
+        updatedAt: true,
+        user: {
+          select: {
+            id: true,
+            email: true,
+            profileImage: true,
+            collegeProfile: {
+              select: {
+                id: true,
+                collegeName: true,
+                logo: true,
+              },
+            },
+          },
+        },
+        category: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        _count: {
+          select: {
+            likes: true,
+            comments: true,
+            bookmarks: true,
+            interests: true, // Count of registrations
+          },
+        },
+      };
+
+      // Add interests/registrations if requested
+      if (includeRegistrations) {
+        selectInclude.interests = {
+          select: {
+            id: true,
+            userId: true,
+            createdAt: true,
+            user: {
+              select: {
+                id: true,
+                email: true,
+                profileImage: true,
+              },
+            },
+          },
+        };
+      }
+
+      const [events, total] = await Promise.all([
+        this.prisma.post.findMany({
+          where,
+          select: selectInclude,
+          orderBy: { createdAt: 'desc' },
+          skip,
+          take: limit,
+        }),
+        this.prisma.post.count({ where }),
+      ]);
+
+      // Get user's registered event IDs if userId is provided (for isRegistered flag)
+      let userRegisteredEventIds: Set<string> = new Set();
+      if (userId && events.length > 0) {
+        const eventIds = events.map((e: any) => e.id);
+        const userInterests = await this.prisma.postInterest.findMany({
+          where: {
+            userId,
+            postId: { in: eventIds },
+          },
+          select: { postId: true },
+        });
+        userRegisteredEventIds = new Set(userInterests.map(i => i.postId));
+      }
+
+      // Extract metadata and format response
+      const formattedEvents = events.map((event: any) => {
+        const metadata = event.metadata as any || {};
+        const result: any = {
+          id: event.id,
+          title: event.title,
+          description: event.description,
+          images: event.images || [],
+          postType: event.postType,
+          isPublished: metadata.isPublished !== undefined ? metadata.isPublished : event.isActive,
+          eventDate: metadata.eventDate || null,
+          location: metadata.location || null,
+          collegeId: metadata.collegeId || null,
+          eventDates: metadata.eventDates || null,
+          eventYearRange: metadata.eventYearRange || null,
+          createdAt: event.createdAt,
+          updatedAt: event.updatedAt,
+          user: event.user,
+          category: event.category,
+          _count: {
+            ...event._count,
+            registrations: event._count?.interests || 0,
+          },
+        };
+
+        // Add isRegistered flag if userId is provided
+        if (userId) {
+          result.isRegistered = userRegisteredEventIds.has(event.id);
+        }
+
+        // Add registrations array if requested
+        if (includeRegistrations && event.interests) {
+          result.registrations = event.interests.map((interest: any) => ({
+            id: interest.id,
+            userId: interest.userId,
+            user: interest.user || null,
+            interestedAt: interest.createdAt, // createdAt is the registration time
+            createdAt: interest.createdAt,
+          }));
+        }
+
+        return result;
+      });
+
+      return {
+        data: formattedEvents,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
+      };
+    } catch (error: any) {
+      this.logger.error(`Error fetching college events: ${error.message}`, error.stack);
+      throw new BadRequestException(`Failed to fetch college events: ${error.message}`);
+    }
+  }
+
+  async getCollegeEventById(id: string) {
+    try {
+      const event = await this.prisma.post.findFirst({
+        where: {
+          id,
+          postType: 'EVENT',
+          isActive: true,
+        },
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          images: true,
+          postType: true,
+          isActive: true,
+          metadata: true,
+          createdAt: true,
+          updatedAt: true,
+          user: {
+            select: {
+              id: true,
+              email: true,
+              profileImage: true,
+              collegeProfile: {
+                select: {
+                  id: true,
+                  collegeName: true,
+                  logo: true,
+                },
+              },
+            },
+          },
+          category: {
+            select: {
+              id: true,
+              name: true,
+            },
+          },
+          interests: {
+            select: {
+              id: true,
+              userId: true,
+              createdAt: true,
+            },
+          },
+          _count: {
+            select: {
+              likes: true,
+              comments: true,
+              bookmarks: true,
+              interests: true, // Count of registrations
+            },
+          },
+        },
+      });
+
+      if (!event) {
+        throw new NotFoundException('College event not found');
+      }
+
+      const metadata = (event as any).metadata as any || {};
+      
+      // Format registrations - fetch user details if needed
+      const interests = (event as any).interests || [];
+      const userIds = interests.map((i: any) => i.userId);
+      
+      // Fetch user details for registrations
+      const users = userIds.length > 0 ? await this.prisma.user.findMany({
+        where: { id: { in: userIds } },
+        select: {
+          id: true,
+          email: true,
+          profileImage: true,
+        },
+      }) : [];
+      
+      const userMap = new Map(users.map((u: any) => [u.id, u]));
+      
+      const registrations = interests.map((interest: any) => ({
+        id: interest.id,
+        userId: interest.userId,
+        user: userMap.get(interest.userId) || null,
+        interestedAt: interest.createdAt, // createdAt is the registration time
+        createdAt: interest.createdAt,
+      }));
+
+      return {
+        id: event.id,
+        title: event.title,
+        description: event.description,
+        images: event.images || [],
+        postType: event.postType,
+        isPublished: metadata.isPublished !== undefined ? metadata.isPublished : event.isActive,
+        eventDate: metadata.eventDate || null,
+        location: metadata.location || null,
+        collegeId: metadata.collegeId || null,
+        eventDates: metadata.eventDates || null,
+        eventYearRange: metadata.eventYearRange || null,
+        createdAt: event.createdAt,
+        updatedAt: event.updatedAt,
+        user: (event as any).user,
+        category: (event as any).category,
+        registrations: registrations,
+        _count: {
+          ...(event as any)._count,
+          registrations: (event as any)._count?.interests || 0,
+        },
+      };
+    } catch (error: any) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      this.logger.error(`Error fetching college event ${id}: ${error.message}`, error.stack);
+      throw new BadRequestException(`Failed to fetch college event: ${error.message}`);
+    }
   }
 }
 

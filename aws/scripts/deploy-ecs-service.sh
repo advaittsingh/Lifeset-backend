@@ -70,9 +70,35 @@ SECRET_ARN=$(aws secretsmanager describe-secret \
     --query ARN \
     --output text 2>/dev/null || echo "")
 
+# Get SSL certificate secret ARNs (optional - will be empty if not set)
+SSL_CERT_SECRET_ARN=$(aws secretsmanager describe-secret \
+    --secret-id "lifeset/${ENVIRONMENT}/ssl-cert" \
+    --region "$REGION" \
+    --query ARN \
+    --output text 2>/dev/null || echo "")
+
+SSL_KEY_SECRET_ARN=$(aws secretsmanager describe-secret \
+    --secret-id "lifeset/${ENVIRONMENT}/ssl-key" \
+    --region "$REGION" \
+    --query ARN \
+    --output text 2>/dev/null || echo "")
+
 if [ -z "$TASK_EXECUTION_ROLE_ARN" ] || [ -z "$PRIVATE_SUBNET_1" ]; then
     echo -e "${RED}Error: Could not retrieve infrastructure details. Make sure the CloudFormation stack is deployed.${NC}"
     exit 1
+fi
+
+# Check if SSL certificates are configured
+if [ -n "$SSL_CERT_SECRET_ARN" ] && [ -n "$SSL_KEY_SECRET_ARN" ]; then
+    echo -e "${GREEN}SSL certificates found in Secrets Manager${NC}"
+    echo "Certificate ARN: $SSL_CERT_SECRET_ARN"
+    echo "Private Key ARN: $SSL_KEY_SECRET_ARN"
+else
+    echo -e "${YELLOW}SSL certificates not found. HTTPS will not be enabled.${NC}"
+    echo "To enable HTTPS, run: ./add-ssl-certificates.sh"
+    # Use empty strings for replacement
+    SSL_CERT_SECRET_ARN=""
+    SSL_KEY_SECRET_ARN=""
 fi
 
 # Create task role (if it doesn't exist)
@@ -113,22 +139,49 @@ if [ -z "$CLOUDFRONT_DOMAIN" ]; then
         --region "$REGION" \
         --query 'Stacks[0].Outputs[?OutputKey==`CloudFrontDomainName`].OutputValue' \
         --output text 2>/dev/null || echo "")
+    
+    # If CloudFormation doesn't return the correct domain, try to get it from CloudFront directly
+    if [ -z "$CLOUDFRONT_DOMAIN" ] || [ "$CLOUDFRONT_DOMAIN" == "None" ]; then
+        # Get CloudFront distribution ID from stack
+        CLOUDFRONT_DIST_ID=$(aws cloudformation describe-stacks \
+            --stack-name lifeset-admin-panel \
+            --region "$REGION" \
+            --query 'Stacks[0].Outputs[?OutputKey==`CloudFrontDistributionId`].OutputValue' \
+            --output text 2>/dev/null || echo "")
+        
+        if [ -n "$CLOUDFRONT_DIST_ID" ] && [ "$CLOUDFRONT_DIST_ID" != "None" ]; then
+            # Get domain name from CloudFront distribution
+            CLOUDFRONT_DOMAIN=$(aws cloudfront get-distribution \
+                --id "$CLOUDFRONT_DIST_ID" \
+                --region "$REGION" \
+                --query 'Distribution.DomainName' \
+                --output text 2>/dev/null || echo "")
+        fi
+    fi
 fi
 
 # Set CORS origins - include CloudFront domain if available
 CORS_ORIGINS="http://localhost:3000,http://localhost:5173,http://localhost:8081"
-if [ -n "$CLOUDFRONT_DOMAIN" ]; then
+if [ -n "$CLOUDFRONT_DOMAIN" ] && [ "$CLOUDFRONT_DOMAIN" != "None" ]; then
+    # Add both possible CloudFront domains (in case there are multiple)
     CORS_ORIGINS="$CORS_ORIGINS,https://$CLOUDFRONT_DOMAIN"
-    echo "Adding CloudFront domain to CORS: https://$CLOUDFRONT_DOMAIN"
+    # Also add the known working domain
+    CORS_ORIGINS="$CORS_ORIGINS,https://d1s4ydvkqe1aav.cloudfront.net"
+    echo "Adding CloudFront domains to CORS: https://$CLOUDFRONT_DOMAIN, https://d1s4ydvkqe1aav.cloudfront.net"
 fi
 
-# Read and replace placeholders in task definition template
-sed -e "s|REPLACE_WITH_TASK_EXECUTION_ROLE_ARN|$TASK_EXECUTION_ROLE_ARN|g" \
-    -e "s|REPLACE_WITH_TASK_ROLE_ARN|$TASK_ROLE_ARN|g" \
-    -e "s|REPLACE_WITH_ECR_IMAGE_URI|$ECR_REPOSITORY_URI:$IMAGE_TAG|g" \
-    -e "s|REPLACE_WITH_SECRETS_MANAGER_ARN|$SECRET_ARN|g" \
-    -e "s|REPLACE_WITH_CORS_ORIGIN|$CORS_ORIGINS|g" \
-    "$SCRIPT_DIR/../infrastructure/ecs-task-definition.json" > "$TASK_DEF_FILE"
+# Prepare task definition using Python script for proper JSON handling
+echo -e "${YELLOW}Preparing task definition...${NC}"
+"$SCRIPT_DIR/prepare-task-definition.sh" \
+    "$SCRIPT_DIR/../infrastructure/ecs-task-definition.json" \
+    "$TASK_DEF_FILE" \
+    "$TASK_EXECUTION_ROLE_ARN" \
+    "$TASK_ROLE_ARN" \
+    "$ECR_REPOSITORY_URI:$IMAGE_TAG" \
+    "$SECRET_ARN" \
+    "$CORS_ORIGINS" \
+    "$SSL_CERT_SECRET_ARN" \
+    "$SSL_KEY_SECRET_ARN"
 
 # Register task definition
 echo -e "${YELLOW}Registering task definition...${NC}"

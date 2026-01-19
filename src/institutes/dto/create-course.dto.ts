@@ -22,6 +22,31 @@ export class CreateCourseDto {
   @IsOptional()
   specialisationId?: string;
 
+  @ApiProperty({ description: 'Awarded ID (optional, can be derived from specialisation)', required: false })
+  @IsString()
+  @IsOptional()
+  awardedId?: string;
+
+  @ApiProperty({ description: 'Affiliation ID (optional, redundant with institute ID in path)', required: false })
+  @IsString()
+  @IsOptional()
+  affiliationId?: string;
+
+  @ApiProperty({ description: 'Course section', example: 'A', required: false })
+  @IsString()
+  @IsOptional()
+  section?: string;
+
+  @ApiProperty({ description: 'Course mode', example: 'FULL_TIME', required: false })
+  @IsString()
+  @IsOptional()
+  courseMode?: string;
+
+  @ApiProperty({ description: 'Course level', example: 'DIPLOMA', required: false })
+  @IsString()
+  @IsOptional()
+  level?: string;
+
   @ApiProperty({ description: 'Course duration', example: '3 years', required: false })
   @IsString()
   @IsOptional()

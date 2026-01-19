@@ -27,12 +27,22 @@ export class CmsAdminService {
       where.isActive = true; // Default: only show active (non-deleted) posts
     }
 
-    return this.prisma.post.findMany({
+    const posts = await this.prisma.post.findMany({
       where,
       include: { user: true, category: true },
       orderBy: { createdAt: 'desc' },
       skip: filters?.page ? (parseInt(String(filters.page), 10) - 1) * parseInt(String(filters.limit || 20), 10) : 0,
       take: parseInt(String(filters?.limit || 20), 10),
+    });
+
+    // Extract fullArticle from metadata for each post
+    return posts.map(post => {
+      const metadata = post.metadata as any || {};
+      return {
+        ...post,
+        isPublished: metadata.isPublished !== undefined ? metadata.isPublished : post.isActive,
+        fullArticle: metadata.fullArticle || null, // Extract fullArticle as HTML string (preserves HTML formatting)
+      };
     });
   }
 
@@ -104,6 +114,7 @@ export class CmsAdminService {
     return {
       ...post,
       isPublished: metadata.isPublished !== undefined ? metadata.isPublished : post.isActive,
+      fullArticle: metadata.fullArticle || null, // Extract fullArticle as HTML string (preserves HTML formatting)
     };
   }
 
@@ -196,12 +207,22 @@ export class CmsAdminService {
       where.isActive = true; // Default: only show active (non-deleted) posts
     }
 
-    return this.prisma.post.findMany({
+    const posts = await this.prisma.post.findMany({
       where,
       include: { user: true, category: true },
       orderBy: { createdAt: 'desc' },
       skip: filters?.page ? (parseInt(String(filters.page), 10) - 1) * parseInt(String(filters.limit || 20), 10) : 0,
       take: parseInt(String(filters?.limit || 20), 10),
+    });
+
+    // Extract fullArticle from metadata for each post
+    return posts.map(post => {
+      const metadata = post.metadata as any || {};
+      return {
+        ...post,
+        isPublished: metadata.isPublished !== undefined ? metadata.isPublished : post.isActive,
+        fullArticle: metadata.fullArticle || null, // Extract fullArticle as HTML string (preserves HTML formatting)
+      };
     });
   }
 
@@ -227,6 +248,7 @@ export class CmsAdminService {
     return {
       ...post,
       isPublished: metadata.isPublished !== undefined ? metadata.isPublished : post.isActive,
+      fullArticle: metadata.fullArticle || null, // Extract fullArticle as HTML string (preserves HTML formatting)
     };
   }
 
@@ -452,35 +474,106 @@ export class CmsAdminService {
   }
 
   async createMcqQuestion(data: any) {
-    // Validate categoryId is provided (required field)
-    if (!data.categoryId) {
-      throw new BadRequestException('categoryId is required for MCQ questions');
-    }
+    try {
+      // Validate required fields
+      if (!data.categoryId) {
+        throw new BadRequestException('categoryId is required for MCQ questions');
+      }
 
-    // Create MCQ with all fields as columns
-    this.logger.log(`Creating MCQ question with data: ${JSON.stringify({
-      question: data.question?.substring(0, 50),
-      categoryId: data.categoryId,
-      questionImage: data.questionImage ? 'present' : 'missing',
-      explanationImage: data.explanationImage ? 'present' : 'missing',
-    })}`);
+      if (!data.question || !data.question.trim()) {
+        throw new BadRequestException('question is required and cannot be empty');
+      }
 
-    return this.prisma.mcqQuestion.create({
-      data: {
-        question: data.question,
-        options: data.options,
-        correctAnswer: data.correctAnswer,
+      if (!data.options || !Array.isArray(data.options) || data.options.length === 0) {
+        throw new BadRequestException('options must be a non-empty array');
+      }
+
+      if (data.correctAnswer === undefined || data.correctAnswer === null) {
+        throw new BadRequestException('correctAnswer is required (0-based index)');
+      }
+
+      if (typeof data.correctAnswer !== 'number' || data.correctAnswer < 0) {
+        throw new BadRequestException('correctAnswer must be a non-negative number (0-based index)');
+      }
+
+      if (data.correctAnswer >= data.options.length) {
+        throw new BadRequestException(`correctAnswer index (${data.correctAnswer}) is out of range. Options array has ${data.options.length} items (valid indices: 0-${data.options.length - 1})`);
+      }
+
+      // Validate category exists
+      const category = await this.prisma.wallCategory.findUnique({
+        where: { id: data.categoryId },
+      });
+      if (!category) {
+        throw new BadRequestException(`Category with ID ${data.categoryId} not found`);
+      }
+
+      // Normalize options format - handle both string arrays and object arrays
+      let normalizedOptions: any[] = data.options;
+      if (data.options.length > 0 && typeof data.options[0] === 'string') {
+        // If options are strings, keep as is
+        normalizedOptions = data.options;
+      } else if (data.options.length > 0 && typeof data.options[0] === 'object') {
+        // If options are objects, extract text field
+        normalizedOptions = data.options.map((opt: any) => opt.text || opt.option || opt);
+      }
+
+      // Validate difficulty
+      const validDifficulties = ['easy', 'medium', 'hard'];
+      const difficulty = data.difficulty || 'medium';
+      if (!validDifficulties.includes(difficulty)) {
+        throw new BadRequestException(`Invalid difficulty: ${difficulty}. Must be one of: ${validDifficulties.join(', ')}`);
+      }
+
+      // Validate language
+      const validLanguages = ['ENGLISH', 'HINDI'];
+      const language = data.language || 'ENGLISH';
+      if (!validLanguages.includes(language)) {
+        throw new BadRequestException(`Invalid language: ${language}. Must be one of: ${validLanguages.join(', ')}`);
+      }
+
+      // Create MCQ with all fields as columns
+      this.logger.log(`Creating MCQ question with data: ${JSON.stringify({
+        question: data.question?.substring(0, 50),
         categoryId: data.categoryId,
-        explanation: data.explanation,
-        solution: data.solution,
-        difficulty: data.difficulty || 'medium',
-        tags: data.tags || [],
-        articleId: data.articleId || null,
-        questionImage: data.questionImage || null,
-        explanationImage: data.explanationImage || null,
-        language: data.language || 'ENGLISH',
-      },
-    });
+        optionsCount: normalizedOptions.length,
+        correctAnswer: data.correctAnswer,
+        difficulty,
+        language,
+        questionImage: data.questionImage ? 'present' : 'missing',
+        explanationImage: data.explanationImage ? 'present' : 'missing',
+      })}`);
+
+      return this.prisma.mcqQuestion.create({
+        data: {
+          question: data.question.trim(),
+          options: normalizedOptions,
+          correctAnswer: data.correctAnswer,
+          categoryId: data.categoryId,
+          explanation: data.explanation?.trim() || null,
+          solution: data.solution?.trim() || null,
+          difficulty,
+          tags: Array.isArray(data.tags) ? data.tags : [],
+          articleId: data.articleId || null,
+          questionImage: data.questionImage || null,
+          explanationImage: data.explanationImage || null,
+          language,
+        },
+      });
+    } catch (error: any) {
+      this.logger.error(`Failed to create MCQ question: ${error.message}`, error.stack);
+      
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      
+      // Handle Prisma errors
+      if (error.code === 'P2003') {
+        throw new BadRequestException(`Invalid categoryId: ${data.categoryId}. The category does not exist.`);
+      }
+      
+      throw new BadRequestException(`Failed to create MCQ question: ${error.message || 'Unknown error'}`);
+    }
   }
 
   async updateMcqQuestion(id: string, data: any) {
@@ -659,22 +752,116 @@ export class CmsAdminService {
         { title: { contains: filters.search, mode: 'insensitive' } },
       ];
     }
+    if (filters?.isActive !== undefined) where.isActive = filters.isActive === 'true';
+    if (filters?.isPublished !== undefined) {
+      // Filter by isPublished in metadata
+      where.metadata = { path: ['isPublished'], equals: filters.isPublished === 'true' };
+    }
 
-    return this.prisma.post.findMany({
+    const posts = await this.prisma.post.findMany({
       where,
       include: { user: { include: { collegeProfile: true } } },
       orderBy: { createdAt: 'desc' },
+      skip: filters?.page ? (parseInt(String(filters.page), 10) - 1) * parseInt(String(filters.limit || 20), 10) : 0,
+      take: parseInt(String(filters?.limit || 20), 10),
+    });
+
+    // Extract isPublished from metadata for each post
+    return posts.map(post => {
+      const metadata = post.metadata as any || {};
+      return {
+        ...post,
+        isPublished: metadata.isPublished !== undefined ? metadata.isPublished : post.isActive,
+        // Extract other metadata fields for convenience
+        collegeId: metadata.collegeId,
+        eventDate: metadata.eventDate,
+        location: metadata.location,
+      };
     });
   }
 
   async createCollegeEvent(data: any, userId: string) {
-    return this.prisma.post.create({
-      data: {
-        ...data,
-        userId,
-        postType: 'EVENT',
-      },
-    });
+    // Validate required fields
+    const title = data.title;
+    if (!title || (typeof title === 'string' && title.trim().length === 0)) {
+      throw new BadRequestException('Title is required and cannot be empty');
+    }
+
+    if (!data.description || (typeof data.description === 'string' && data.description.trim().length === 0)) {
+      throw new BadRequestException('Description is required and cannot be empty');
+    }
+
+    // Validate category ID if provided (but don't fail if it doesn't exist - just set to null)
+    let categoryId = data.categoryId;
+    if (categoryId) {
+      const category = await this.prisma.wallCategory.findUnique({
+        where: { id: categoryId },
+      });
+      if (!category) {
+        // Category doesn't exist - log warning but allow creation with null categoryId
+        this.logger.warn(`Category with ID ${categoryId} not found, setting categoryId to null`);
+        categoryId = null;
+      }
+    }
+
+    // Handle images array properly
+    let images: string[] = [];
+    if (data.images && Array.isArray(data.images) && data.images.length > 0) {
+      images = data.images.filter((img: any) => img && typeof img === 'string' && img.trim().length > 0);
+    }
+
+    // Set isActive based on isPublished if provided
+    const isActive = data.isPublished === true ? true : (data.isActive !== undefined ? data.isActive : true);
+
+    try {
+      const post = await this.prisma.post.create({
+        data: {
+          userId,
+          title: title.trim(),
+          description: typeof data.description === 'string' ? data.description.trim() : data.description, // Store HTML as-is
+          postType: 'EVENT',
+          categoryId: categoryId || null,
+          images,
+          isActive,
+          metadata: {
+            ...(data.metadata || {}),
+            isPublished: data.isPublished !== undefined ? data.isPublished : isActive,
+            // Preserve other metadata fields if provided
+            ...(data.collegeId && { collegeId: data.collegeId }),
+            ...(data.eventDate && { eventDate: data.eventDate }),
+            ...(data.location && { location: data.location }),
+          },
+        },
+      });
+
+      return post;
+    } catch (error: any) {
+      // Provide more helpful error messages
+      if (error.code === 'P2002') {
+        const field = error.meta?.target?.[0] || 'field';
+        throw new BadRequestException(`An event with this ${field} already exists`);
+      }
+      if (error.code === 'P2003') {
+        const field = error.meta?.field_name || 'reference';
+        throw new BadRequestException(`Invalid ${field}: The referenced record does not exist. Please check category IDs and user ID.`);
+      }
+      // Log the error for debugging
+      this.logger.error('Error creating college event:', {
+        message: error.message,
+        code: error.code,
+        meta: error.meta,
+        stack: error.stack,
+        data: { title, userId, categoryId },
+      });
+      
+      // Re-throw BadRequestException as-is
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      
+      // For other errors, provide a generic message
+      throw new BadRequestException(`Failed to create event: ${error.message || 'Unknown error'}`);
+    }
   }
 
   // ========== Govt Vacancies ==========
@@ -692,52 +879,129 @@ export class CmsAdminService {
     } else {
       where.isActive = true;
     }
+    if (filters?.isPublished !== undefined) {
+      // Filter by isPublished in metadata
+      where.metadata = { path: ['isPublished'], equals: filters.isPublished === 'true' };
+    }
 
-    return this.prisma.post.findMany({
+    const posts = await this.prisma.post.findMany({
       where,
       include: { user: true, category: true },
       orderBy: { createdAt: 'desc' },
       skip: filters?.page ? (parseInt(String(filters.page), 10) - 1) * parseInt(String(filters.limit || 20), 10) : 0,
       take: parseInt(String(filters?.limit || 20), 10),
     });
+
+    // Extract applicationLink and isPublished from metadata for each post
+    return posts.map(post => {
+      const metadata = post.metadata as any || {};
+      return {
+        ...post,
+        isPublished: metadata.isPublished !== undefined ? metadata.isPublished : post.isActive,
+        applicationLink: metadata.applicationLink || null,
+        // Extract other metadata fields for convenience
+        nameOfPost: metadata.nameOfPost || post.title,
+        organisationImageUrl: metadata.organisationImage,
+      };
+    });
   }
 
   async createGovtVacancy(data: any, userId: string) {
+    // Validate required fields
+    const title = data.nameOfPost || data.title;
+    if (!title || (typeof title === 'string' && title.trim().length === 0)) {
+      throw new BadRequestException('Title or nameOfPost is required and cannot be empty');
+    }
+
+    if (!data.description || (typeof data.description === 'string' && data.description.trim().length === 0)) {
+      throw new BadRequestException('Description is required and cannot be empty');
+    }
+
+    // Validate category ID if provided (but don't fail if it doesn't exist - just set to null)
+    let categoryId = data.mainCourseCategoryId || data.categoryId;
+    if (categoryId) {
+      const category = await this.prisma.wallCategory.findUnique({
+        where: { id: categoryId },
+      });
+      if (!category) {
+        // Category doesn't exist - log warning but allow creation with null categoryId
+        this.logger.warn(`Category with ID ${categoryId} not found, setting categoryId to null`);
+        categoryId = null;
+      }
+    }
+
     const isActive = data.isPublished === true ? true : (data.isActive !== undefined ? data.isActive : true);
     
-    const post = await this.prisma.post.create({
-      data: {
-        userId,
-        title: data.nameOfPost || data.title,
-        description: data.description,
-        postType: 'GOVT_JOB',
-        categoryId: data.mainCourseCategoryId || data.categoryId,
-        images: data.images || data.organisationImage ? [data.organisationImage || data.images?.[0]] : [],
-        isActive,
-        metadata: {
-          contentLanguage: data.contentLanguage,
-          mainCourseCategoryId: data.mainCourseCategoryId,
-          awardCategoryId: data.awardCategoryId,
-          specialisationCategoryId: data.specialisationCategoryId,
-          examLevel: data.examLevel,
-          examName: data.examName,
-          organisationImage: data.organisationImage || data.images?.[0],
-          nameOfPost: data.nameOfPost,
-          firstAnnouncementDate: data.firstAnnouncementDate,
-          applicationSubmissionLastDate: data.applicationSubmissionLastDate,
-          examDate: data.examDate,
-          examFees: data.examFees,
-          vacanciesSeat: data.vacanciesSeat,
-          evaluationExamPattern: data.evaluationExamPattern,
-          cutoff: data.cutoff,
-          eligibility: data.eligibility,
-          ageLimit: data.ageLimit,
-          isPublished: data.isPublished,
-        },
-      },
-    });
+    // Handle images array properly
+    let images: string[] = [];
+    if (data.images && Array.isArray(data.images) && data.images.length > 0) {
+      images = data.images.filter((img: any) => img && typeof img === 'string' && img.trim().length > 0);
+    } else if (data.organisationImage && typeof data.organisationImage === 'string' && data.organisationImage.trim().length > 0) {
+      images = [data.organisationImage];
+    }
 
-    return post;
+    try {
+      const post = await this.prisma.post.create({
+        data: {
+          userId,
+          title: title.trim(),
+          description: typeof data.description === 'string' ? data.description.trim() : data.description,
+          postType: 'GOVT_JOB',
+          categoryId: categoryId || null,
+          images,
+          isActive,
+          metadata: {
+            contentLanguage: data.contentLanguage,
+            mainCourseCategoryId: data.mainCourseCategoryId,
+            awardCategoryId: data.awardCategoryId,
+            specialisationCategoryId: data.specialisationCategoryId,
+            examLevel: data.examLevel,
+            examName: data.examName,
+            organisationImage: data.organisationImage || (Array.isArray(data.images) && data.images.length > 0 ? data.images[0] : null),
+            nameOfPost: data.nameOfPost,
+            firstAnnouncementDate: data.firstAnnouncementDate,
+            applicationSubmissionLastDate: data.applicationSubmissionLastDate,
+            examDate: data.examDate,
+            examFees: data.examFees,
+            vacanciesSeat: data.vacanciesSeat,
+            evaluationExamPattern: data.evaluationExamPattern,
+            cutoff: data.cutoff,
+            eligibility: data.eligibility,
+            ageLimit: data.ageLimit,
+            applicationLink: data.applicationLink, // NEW: Application link for redirect
+            isPublished: data.isPublished,
+          },
+        },
+      });
+
+      return post;
+    } catch (error: any) {
+      // Provide more helpful error messages
+      if (error.code === 'P2002') {
+        const field = error.meta?.target?.[0] || 'field';
+        throw new BadRequestException(`A vacancy with this ${field} already exists`);
+      }
+      if (error.code === 'P2003') {
+        const field = error.meta?.field_name || 'reference';
+        throw new BadRequestException(`Invalid ${field}: The referenced record does not exist. Please check category IDs and user ID.`);
+      }
+      // Log the error for debugging
+      this.logger.error('Error creating govt vacancy:', {
+        message: error.message,
+        code: error.code,
+        meta: error.meta,
+        stack: error.stack,
+        data: { title, userId, categoryId },
+      });
+      
+      // Re-throw BadRequestException as-is
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      
+      // For other errors, provide a generic message
+      throw new BadRequestException(`Failed to create vacancy: ${error.message || 'Unknown error'}`);
+    }
   }
 
   async getGovtVacancyById(id: string) {
@@ -758,6 +1022,7 @@ export class CmsAdminService {
     return {
       ...post,
       isPublished: metadata.isPublished !== undefined ? metadata.isPublished : post.isActive,
+      applicationLink: metadata.applicationLink || null, // NEW: Extract applicationLink
       contentLanguage: metadata.contentLanguage,
       mainCourseCategoryId: metadata.mainCourseCategoryId,
       awardCategoryId: metadata.awardCategoryId,
@@ -817,6 +1082,7 @@ export class CmsAdminService {
         cutoff: data.cutoff !== undefined ? data.cutoff : existingMetadata.cutoff,
         eligibility: data.eligibility !== undefined ? data.eligibility : existingMetadata.eligibility,
         ageLimit: data.ageLimit !== undefined ? data.ageLimit : existingMetadata.ageLimit,
+        applicationLink: data.applicationLink !== undefined ? data.applicationLink : existingMetadata.applicationLink, // NEW: Update applicationLink
         isPublished: data.isPublished !== undefined ? data.isPublished : existingMetadata.isPublished,
       },
     };
@@ -966,18 +1232,103 @@ export class CmsAdminService {
       ];
     }
     if (filters?.isActive !== undefined) where.isActive = filters.isActive === 'true';
+    if (filters?.isPublished !== undefined) {
+      // Filter by isPublished in metadata
+      where.metadata = { path: ['isPublished'], equals: filters.isPublished === 'true' };
+    }
 
-    return this.prisma.post.findMany({
+    const posts = await this.prisma.post.findMany({
       where,
       include: { user: true, category: true },
       orderBy: { createdAt: 'desc' },
       skip: filters?.page ? (parseInt(String(filters.page), 10) - 1) * parseInt(String(filters.limit || 20), 10) : 0,
       take: parseInt(String(filters?.limit || 20), 10),
     });
+
+    // Extract isPublished from metadata for each post
+    return posts.map(post => {
+      const metadata = post.metadata as any || {};
+      return {
+        ...post,
+        isPublished: metadata.isPublished !== undefined ? metadata.isPublished : post.isActive,
+      };
+    });
   }
 
   async updateFeed(id: string, data: any) {
-    return this.prisma.post.update({ where: { id }, data });
+    // Get existing post to preserve metadata
+    const existingPost = await this.prisma.post.findUnique({
+      where: { id },
+      select: { metadata: true },
+    });
+
+    if (!existingPost) {
+      throw new NotFoundException('Feed not found');
+    }
+
+    const existingMetadata = (existingPost?.metadata as any) || {};
+    
+    // Set isActive based on isPublished if provided
+    let isActive = data.isActive;
+    if (data.isPublished !== undefined) {
+      isActive = data.isPublished === true ? true : (data.isActive !== undefined ? data.isActive : false);
+    }
+
+    // Get existing post to check postType for auto-setting jobType
+    const existingPostFull = await this.prisma.post.findUnique({
+      where: { id },
+      select: { postType: true },
+    });
+
+    // Auto-set jobType based on postType if not explicitly provided
+    let jobType = data.jobType;
+    if (!jobType && existingPostFull?.postType === 'INTERNSHIP') {
+      jobType = 'internship';
+    } else if (!jobType && existingPostFull?.postType === 'FREELANCING') {
+      jobType = 'freelance'; // Default for freelancing
+    }
+
+    // Build update data
+    const updateData: any = {
+      ...(data.title && { title: data.title }),
+      ...(data.description !== undefined && { description: data.description }), // Store HTML as-is
+      ...(data.categoryId !== undefined && { categoryId: data.categoryId }),
+      ...(data.images !== undefined && { images: data.images }),
+      ...(isActive !== undefined && { isActive }),
+      metadata: {
+        ...existingMetadata,
+        // Update job fields in metadata if provided
+        ...(data.companyName !== undefined && { companyName: data.companyName }),
+        ...(data.industry !== undefined && { industry: data.industry }),
+        ...(data.selectRole !== undefined && { selectRole: data.selectRole }),
+        ...(data.jobLocation !== undefined && { jobLocation: data.jobLocation }),
+        ...(data.clientToManage !== undefined && { clientToManage: data.clientToManage }),
+        ...(data.workingDays !== undefined && { workingDays: data.workingDays }),
+        ...(data.yearlySalary !== undefined && { yearlySalary: data.yearlySalary }),
+        ...(data.salaryMin !== undefined && { salaryMin: data.salaryMin }),
+        ...(data.salaryMax !== undefined && { salaryMax: data.salaryMax }),
+        ...(data.skills !== undefined && { skills: data.skills }),
+        ...(data.jobFunction !== undefined && { jobFunction: data.jobFunction }),
+        ...(data.experience !== undefined && { experience: String(data.experience) }),
+        ...(jobType !== undefined && { jobType: jobType }), // Use auto-set or provided jobType
+        ...(data.capacity !== undefined && { capacity: String(data.capacity) }),
+        ...(data.workTime !== undefined && { workTime: data.workTime }),
+        ...(data.perksAndBenefits !== undefined && { perksAndBenefits: data.perksAndBenefits }),
+        ...(data.candidateQualities !== undefined && { candidateQualities: data.candidateQualities }),
+        ...(data.isPublic !== undefined && { isPublic: data.isPublic }),
+        ...(data.isPrivate !== undefined && { isPrivate: data.isPrivate }),
+        ...(data.isPublished !== undefined && { isPublished: data.isPublished }),
+      },
+    };
+
+    // Remove undefined fields
+    Object.keys(updateData).forEach(key => {
+      if (updateData[key] === undefined) {
+        delete updateData[key];
+      }
+    });
+
+    return this.prisma.post.update({ where: { id }, data: updateData });
   }
 
   async deleteFeed(id: string) {
@@ -1238,27 +1589,9 @@ export class CmsAdminService {
       throw new NotFoundException('Category not found');
     }
 
-    // Check if category has posts (which might have constraints preventing deletion)
-    const postCount = await this.prisma.post.count({
-      where: { categoryId: id },
-    });
-    
-    if (postCount > 0) {
-      // Check if any posts have related data that might prevent deletion
-      const postsWithJobPost = await this.prisma.post.count({
-        where: {
-          categoryId: id,
-          jobPost: { isNot: null },
-        },
-      });
-      
-      if (postsWithJobPost > 0) {
-        throw new BadRequestException(
-          `Cannot delete category: This category has ${postCount} post(s), including ${postsWithJobPost} job post(s). ` +
-          `Job posts cannot be deleted through category deletion. Please delete or reassign the posts first.`
-        );
-      }
-    }
+    // Note: JobPost, ExamPost, and QuizPost have onDelete: Cascade in the schema,
+    // so they will be automatically deleted when their parent Post is deleted.
+    // No need to check for them separately.
 
     // Use transaction to ensure atomicity of cascading deletes
     // Using deleteMany for better performance and to avoid transaction timeout issues
@@ -1274,7 +1607,7 @@ export class CmsAdminService {
         // If this is a parent category, delete all subcategories first
         if (!category.parentCategoryId) {
           const subCategories = await tx.wallCategory.findMany({
-            where: { parentCategoryId: id },
+      where: { parentCategoryId: id },
             select: { id: true },
           });
 
@@ -1315,8 +1648,8 @@ export class CmsAdminService {
           // This is a subcategory, delete its chapters
           try {
             const chapterResult = await (tx as any).chapter.deleteMany({
-              where: { subCategoryId: id },
-            });
+        where: { subCategoryId: id },
+      });
             deletedCounts.chapters = chapterResult.count || 0;
           } catch (error: any) {
             // Chapter table might not exist, ignore
@@ -1352,14 +1685,14 @@ export class CmsAdminService {
         }
         if (deletedCounts.mcqQuestions > 0) {
           messageParts.push(`${deletedCounts.mcqQuestions} MCQ question(s)`);
-        }
+    }
 
         const message = messageParts.length > 0
           ? `Category deleted successfully. Also deleted: ${messageParts.join(', ')}.`
           : 'Category deleted successfully.';
 
-        return {
-          success: true,
+    return {
+      success: true,
           message,
           deleted: deletedCounts,
         };
@@ -1569,6 +1902,100 @@ export class CmsAdminService {
       }
       this.logger.error(`Error deleting chapter ${id}: ${error.message}`, error.stack);
       throw new BadRequestException(`Failed to delete chapter: ${error.message}`);
+    }
+  }
+
+  // ========== Demo Videos ==========
+  async getDemoVideos() {
+    try {
+      const config = await this.prisma.appConfig.findUnique({
+        where: { key: 'DEMO_VIDEOS' },
+      });
+
+      if (!config) {
+        return {
+          videos: {},
+          updatedAt: null,
+        };
+      }
+
+      const value = config.value as any;
+      return {
+        videos: value || {},
+        updatedAt: config.updatedAt,
+      };
+    } catch (error: any) {
+      this.logger.error(`Error fetching demo videos: ${error.message}`, error.stack);
+      throw new BadRequestException(`Failed to fetch demo videos: ${error.message}`);
+    }
+  }
+
+  async updateDemoVideos(data: {
+    videos?: Record<string, string | null>; // Feature name -> Video URL mapping (wrapped format)
+    [key: string]: any; // Allow direct format: { myCard: "...", networking: null, ... }
+  }) {
+    try {
+      // Support both formats: { videos: {...} } or { myCard: "...", networking: null, ... }
+      const videos = data.videos || data;
+      
+      // Validate video URLs
+      const videoUrls = Object.values(videos).filter((url): url is string => url !== null && url !== undefined);
+      for (const url of videoUrls) {
+        if (url && typeof url === 'string') {
+          // Basic URL validation
+          try {
+            new URL(url);
+          } catch {
+            throw new BadRequestException(`Invalid video URL: ${url}`);
+          }
+        }
+      }
+
+      const existing = await this.prisma.appConfig.findUnique({
+        where: { key: 'DEMO_VIDEOS' },
+      });
+
+      // Remove null/undefined values and keep only valid video URLs
+      const newValue: Record<string, string> = {};
+      for (const [key, value] of Object.entries(videos)) {
+        if (key !== 'videos' && value !== null && value !== undefined && typeof value === 'string') {
+          newValue[key] = value;
+        }
+      }
+
+      if (existing) {
+        const updated = await this.prisma.appConfig.update({
+          where: { key: 'DEMO_VIDEOS' },
+          data: {
+            value: newValue as any,
+          },
+        });
+        this.logger.log(`Demo videos updated`);
+        return {
+          success: true,
+          videos: updated.value,
+          updatedAt: updated.updatedAt,
+        };
+      } else {
+        const created = await this.prisma.appConfig.create({
+          data: {
+            key: 'DEMO_VIDEOS',
+            value: newValue as any,
+          },
+        });
+        this.logger.log(`Demo videos created`);
+        return {
+          success: true,
+          videos: created.value,
+          updatedAt: created.updatedAt,
+        };
+      }
+    } catch (error: any) {
+      if (error instanceof BadRequestException) {
+        throw error;
+      }
+      this.logger.error(`Error updating demo videos: ${error.message}`, error.stack);
+      throw new BadRequestException(`Failed to update demo videos: ${error.message}`);
     }
   }
 }

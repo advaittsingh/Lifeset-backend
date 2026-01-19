@@ -19,16 +19,16 @@ export class CreateMcqDto {
   @IsNotEmpty()
   question: string;
 
-  @ApiProperty({ description: 'Answer options', type: [McqOptionDto] })
+  @ApiProperty({ 
+    description: 'Answer options - can be array of strings or array of objects with text and isCorrect',
+    example: '["Option 1", "Option 2", "Option 3", "Option 4"] or [{"text": "Option 1", "isCorrect": false}, ...]'
+  })
   @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => McqOptionDto)
-  options: McqOptionDto[];
+  options: any[]; // Flexible to accept both string arrays and object arrays
 
   @ApiProperty({ description: 'Correct answer index (0-based)' })
   @IsNumber()
   @Min(0)
-  @Max(3)
   correctAnswer: number;
 
   @ApiProperty({ description: 'Category ID (required)' })
@@ -97,5 +97,15 @@ export class CreateMcqDto {
   @IsString()
   @IsOptional()
   explanationImage?: string;
+
+  @ApiProperty({ description: 'Detailed solution/explanation', required: false })
+  @IsString()
+  @IsOptional()
+  solution?: string;
+
+  @ApiProperty({ description: 'Language', enum: ['ENGLISH', 'HINDI'], required: false, default: 'ENGLISH' })
+  @IsString()
+  @IsOptional()
+  language?: string;
 }
 

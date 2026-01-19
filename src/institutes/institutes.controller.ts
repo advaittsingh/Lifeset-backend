@@ -13,10 +13,22 @@ export class InstitutesController {
     return this.institutesService.getInstitutes(filters);
   }
 
-  @Get(':id')
-  @ApiOperation({ summary: 'Get institute by ID' })
-  async getInstituteById(@Param('id') id: string) {
-    return this.institutesService.getInstituteById(id);
+  @Get('semesters/list')
+  @ApiOperation({ summary: 'Get standard semester list (1st-8th Semester)' })
+  async getSemesters() {
+    return this.institutesService.getSemesters();
+  }
+
+  @Get('courses/:id')
+  @ApiOperation({ summary: 'Get course by ID' })
+  async getCourseById(@Param('id') id: string) {
+    return this.institutesService.getCourseById(id);
+  }
+
+  @Get(':id/sections')
+  @ApiOperation({ summary: 'Get sections for an institute' })
+  async getSections(@Param('id') id: string) {
+    return this.institutesService.getSectionsByCollegeId(id);
   }
 
   @Get(':id/courses')
@@ -25,10 +37,10 @@ export class InstitutesController {
     return this.institutesService.getCourses(id);
   }
 
-  @Get('courses/:id')
-  @ApiOperation({ summary: 'Get course by ID' })
-  async getCourseById(@Param('id') id: string) {
-    return this.institutesService.getCourseById(id);
+  @Get(':id')
+  @ApiOperation({ summary: 'Get institute by ID' })
+  async getInstituteById(@Param('id') id: string) {
+    return this.institutesService.getInstituteById(id);
   }
 }
 

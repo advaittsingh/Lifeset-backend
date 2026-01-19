@@ -41,12 +41,27 @@ export class JobsService {
     skills?: string[];
     page?: number;
     limit?: number;
-    type?: 'JOB' | 'INTERNSHIP' | 'FREELANCING' | 'GOVT_JOB';
-    excludeType?: 'JOB' | 'INTERNSHIP' | 'FREELANCING' | 'GOVT_JOB';
+    type?: 'JOB' | 'INTERNSHIP' | 'FREELANCING' | 'GOVT_JOB' | string;
+    excludeType?: 'JOB' | 'INTERNSHIP' | 'FREELANCING' | 'GOVT_JOB' | string;
   }) {
     const page = parseInt(String(filters.page || 1), 10);
     const limit = parseInt(String(filters.limit || 20), 10);
     const skip = (page - 1) * limit;
+
+    // Normalize type filter to match FeedType enum
+    const normalizePostType = (type: string | undefined): 'JOB' | 'INTERNSHIP' | 'FREELANCING' | 'GOVT_JOB' | undefined => {
+      if (!type) return undefined;
+      const normalized = type.toUpperCase();
+      if (normalized === 'FREELANCE' || normalized === 'FREELANCING') return 'FREELANCING';
+      if (normalized === 'INTERNSHIP') return 'INTERNSHIP';
+      if (normalized === 'JOB') return 'JOB';
+      if (normalized === 'GOVT_JOB' || normalized === 'GOVT-JOB' || normalized === 'GOVTJOB') return 'GOVT_JOB';
+      // If already a valid enum value, return as-is
+      if (['JOB', 'INTERNSHIP', 'FREELANCING', 'GOVT_JOB'].includes(normalized)) {
+        return normalized as 'JOB' | 'INTERNSHIP' | 'FREELANCING' | 'GOVT_JOB';
+      }
+      return undefined;
+    };
 
     const postFilter: any = { 
       isActive: true,
@@ -54,14 +69,16 @@ export class JobsService {
     };
     
     if (filters.excludeType) {
-      postFilter.postType = { 
-        in: ['JOB', 'INTERNSHIP', 'FREELANCING', 'GOVT_JOB'].filter(t => t !== filters.excludeType)
-      };
+      const normalizedExclude = normalizePostType(filters.excludeType);
+      if (normalizedExclude) {
+        postFilter.postType = { 
+          in: ['JOB', 'INTERNSHIP', 'FREELANCING', 'GOVT_JOB'].filter(t => t !== normalizedExclude)
+        };
+      }
     } else if (filters.type) {
-      if (filters.type === 'GOVT_JOB') {
-        postFilter.postType = 'GOVT_JOB';
-      } else {
-        postFilter.postType = filters.type;
+      const normalizedType = normalizePostType(filters.type);
+      if (normalizedType) {
+        postFilter.postType = normalizedType;
       }
     }
 
@@ -88,6 +105,13 @@ export class JobsService {
             select: {
               id: true,
               profileImage: true,
+              companyProfile: {
+                select: {
+                  id: true,
+                  companyName: true,
+                  industry: true,
+                },
+              },
             },
           },
           jobPost: {
@@ -125,11 +149,70 @@ export class JobsService {
         ? post.description.substring(0, 200) + '...'
         : post.description;
 
+      // Extract company name from multiple locations (improved extraction)
+      const companyName = 
+        metadata.companyName || 
+        (post as any).companyName || 
+        post.user?.companyProfile?.companyName || 
+        null;
+      
+      // Extract job function from metadata or post columns
+      const jobFunction = 
+        metadata.jobFunction || 
+        (post as any).jobFunction || 
+        null;
+      
+      // Extract industry from multiple locations
+      const industry = 
+        metadata.industry || 
+        (post as any).industry || 
+        post.user?.companyProfile?.industry || 
+        null;
+      
+      // Extract work time from metadata or post columns
+      const workTime = 
+        metadata.workTime || 
+        (post as any).workTime || 
+        null;
+      
+      // Map postType to jobType for frontend compatibility
+      // Priority: metadata.jobType > postType mapping
+      let jobType: string | null = null;
+      
+      // First, check metadata for explicit jobType
+      if (metadata.jobType || metadata.job_type || metadata.type) {
+        jobType = metadata.jobType || metadata.job_type || metadata.type;
+        // Normalize to lowercase for consistency
+        if (jobType) {
+          jobType = jobType.toLowerCase();
+          // Map 'contract' variations to 'contract'
+          if (jobType === 'contract' || jobType === 'contracting') {
+            jobType = 'contract';
+          } else if (jobType === 'freelance' || jobType === 'freelancing') {
+            jobType = 'freelance';
+          } else if (jobType === 'internship' || jobType === 'intern') {
+            jobType = 'internship';
+          }
+        }
+      } else {
+        // Fallback to postType mapping if no metadata jobType
+        if (post.postType === 'INTERNSHIP') {
+          jobType = 'internship';
+        } else if (post.postType === 'FREELANCING') {
+          jobType = 'freelance'; // Default for freelancing
+        }
+        // For JOB and GOVT_JOB postType, jobType remains null (regular jobs)
+      }
+
       return {
         id: jobPost?.id || post.id,
         postId: post.id,
         jobTitle: post.title,
         jobDescription: truncatedDescription,
+        companyName, // Added company name
+        jobFunction, // Added job function
+        industry, // Added industry
+        workTime, // Added work time
         location: jobPost?.location || metadata.jobLocation || null,
         salaryMin: jobPost?.salaryMin || metadata.salaryMin || null,
         salaryMax: jobPost?.salaryMax || metadata.salaryMax || null,
@@ -139,6 +222,7 @@ export class JobsService {
         applications: jobPost?.applications || post._count.applications || 0,
         createdAt: post.createdAt,
         postType: post.postType,
+        jobType: jobType, // Added jobType field for frontend filtering
         user: post.user,
       };
     });
@@ -160,12 +244,27 @@ export class JobsService {
     skills?: string[];
     page?: number;
     limit?: number;
-    type?: 'JOB' | 'INTERNSHIP' | 'FREELANCING' | 'GOVT_JOB';
-    excludeType?: 'JOB' | 'INTERNSHIP' | 'FREELANCING' | 'GOVT_JOB';
+    type?: 'JOB' | 'INTERNSHIP' | 'FREELANCING' | 'GOVT_JOB' | string;
+    excludeType?: 'JOB' | 'INTERNSHIP' | 'FREELANCING' | 'GOVT_JOB' | string;
   }) {
     const page = parseInt(String(filters.page || 1), 10);
     const limit = parseInt(String(filters.limit || 20), 10);
     const skip = (page - 1) * limit;
+
+    // Normalize type filter to match FeedType enum
+    const normalizePostType = (type: string | undefined): 'JOB' | 'INTERNSHIP' | 'FREELANCING' | 'GOVT_JOB' | undefined => {
+      if (!type) return undefined;
+      const normalized = type.toUpperCase();
+      if (normalized === 'FREELANCE' || normalized === 'FREELANCING') return 'FREELANCING';
+      if (normalized === 'INTERNSHIP') return 'INTERNSHIP';
+      if (normalized === 'JOB') return 'JOB';
+      if (normalized === 'GOVT_JOB' || normalized === 'GOVT-JOB' || normalized === 'GOVTJOB') return 'GOVT_JOB';
+      // If already a valid enum value, return as-is
+      if (['JOB', 'INTERNSHIP', 'FREELANCING', 'GOVT_JOB'].includes(normalized)) {
+        return normalized as 'JOB' | 'INTERNSHIP' | 'FREELANCING' | 'GOVT_JOB';
+      }
+      return undefined;
+    };
 
     // Build post filter - query Post directly since CMS creates Post records
     const postFilter: any = { 
@@ -175,15 +274,16 @@ export class JobsService {
     
     // Filter by postType (include specific type) - excludeType takes precedence if both are provided
     if (filters.excludeType) {
-      postFilter.postType = { 
-        in: ['JOB', 'INTERNSHIP', 'FREELANCING', 'GOVT_JOB'].filter(t => t !== filters.excludeType)
-      };
+      const normalizedExclude = normalizePostType(filters.excludeType);
+      if (normalizedExclude) {
+        postFilter.postType = { 
+          in: ['JOB', 'INTERNSHIP', 'FREELANCING', 'GOVT_JOB'].filter(t => t !== normalizedExclude)
+        };
+      }
     } else if (filters.type) {
-      // Support GOVT_JOB type
-      if (filters.type === 'GOVT_JOB') {
-        postFilter.postType = 'GOVT_JOB';
-      } else {
-        postFilter.postType = filters.type;
+      const normalizedType = normalizePostType(filters.type);
+      if (normalizedType) {
+        postFilter.postType = normalizedType;
       }
     }
 
@@ -215,6 +315,13 @@ export class JobsService {
               id: true,
               email: true,
               profileImage: true,
+              companyProfile: {
+                select: {
+                  id: true,
+                  companyName: true,
+                  industry: true,
+                },
+              },
             },
           },
           jobPost: {
@@ -249,15 +356,74 @@ export class JobsService {
     ]);
 
     // Transform posts to match JobPost format for mobile app compatibility
-    const jobs = posts.map((post) => {
+    const jobs = posts.map((post: any) => {
       const jobPost = post.jobPost;
       const metadata = post.metadata as any || {};
       
+      // Extract company name from multiple locations (improved extraction)
+      const companyName = 
+        metadata.companyName || 
+        (post as any).companyName || 
+        post.user?.companyProfile?.companyName || 
+        null;
+      
+      // Extract job function from metadata or post columns
+      const jobFunction = 
+        metadata.jobFunction || 
+        (post as any).jobFunction || 
+        null;
+      
+      // Extract industry from multiple locations
+      const industry = 
+        metadata.industry || 
+        (post as any).industry || 
+        post.user?.companyProfile?.industry || 
+        null;
+      
+      // Extract work time from metadata or post columns
+      const workTime = 
+        metadata.workTime || 
+        (post as any).workTime || 
+        null;
+      
+      // Map postType to jobType for frontend compatibility
+      // Priority: metadata.jobType > postType mapping
+      let jobType: string | null = null;
+      
+      // First, check metadata for explicit jobType
+      if (metadata.jobType || metadata.job_type || metadata.type) {
+        jobType = metadata.jobType || metadata.job_type || metadata.type;
+        // Normalize to lowercase for consistency
+        if (jobType) {
+          jobType = jobType.toLowerCase();
+          // Map 'contract' variations to 'contract'
+          if (jobType === 'contract' || jobType === 'contracting') {
+            jobType = 'contract';
+          } else if (jobType === 'freelance' || jobType === 'freelancing') {
+            jobType = 'freelance';
+          } else if (jobType === 'internship' || jobType === 'intern') {
+            jobType = 'internship';
+          }
+        }
+      } else {
+        // Fallback to postType mapping if no metadata jobType
+        if (post.postType === 'INTERNSHIP') {
+          jobType = 'internship';
+        } else if (post.postType === 'FREELANCING') {
+          jobType = 'freelance'; // Default for freelancing
+        }
+        // For JOB and GOVT_JOB postType, jobType remains null (regular jobs)
+      }
+
       return {
         id: jobPost?.id || post.id,
         postId: post.id,
         jobTitle: jobPost?.jobTitle || post.title,
         jobDescription: jobPost?.jobDescription || post.description,
+        companyName, // Added company name
+        jobFunction, // Added job function
+        industry, // Added industry
+        workTime, // Added work time
         location: jobPost?.location || metadata.jobLocation || null,
         salaryMin: jobPost?.salaryMin || metadata.salaryMin || null,
         salaryMax: jobPost?.salaryMax || metadata.salaryMax || null,
@@ -268,6 +434,8 @@ export class JobsService {
         applications: jobPost?.applications || post._count.applications || 0,
         createdAt: post.createdAt,
         updatedAt: post.updatedAt,
+        postType: post.postType,
+        jobType: jobType, // Added jobType field for frontend filtering
         post: {
           id: post.id,
           postType: post.postType,
@@ -297,7 +465,17 @@ export class JobsService {
       include: {
         post: {
           include: {
-            user: true,
+            user: {
+              include: {
+                companyProfile: {
+                  select: {
+                    id: true,
+                    companyName: true,
+                    industry: true,
+                  },
+                },
+              },
+            },
           },
         },
         _count: {
@@ -318,7 +496,17 @@ export class JobsService {
           postType: { in: ['JOB', 'INTERNSHIP', 'FREELANCING', 'GOVT_JOB'] },
         },
         include: {
-          user: true,
+          user: {
+            include: {
+              companyProfile: {
+                select: {
+                  id: true,
+                  companyName: true,
+                  industry: true,
+                },
+              },
+            },
+          },
           jobPost: {
             include: {
               _count: {
@@ -343,13 +531,169 @@ export class JobsService {
     }
 
     // Transform to match expected format
-    const job = jobPost || (() => {
+    let job: any;
+    
+    if (jobPost) {
+      // Handle JobPost case
+      const metadata = jobPost.post?.metadata as any || {};
+      const postData = jobPost.post as any;
+      
+      // Extract company name from multiple locations (improved extraction)
+      const companyName = 
+        metadata.companyName || 
+        postData?.companyName || 
+        jobPost.post?.user?.companyProfile?.companyName || 
+        null;
+      
+      // Extract job function from metadata or post columns
+      const jobFunction = 
+        metadata.jobFunction || 
+        postData?.jobFunction || 
+        null;
+      
+      // Extract industry from multiple locations
+      const industry = 
+        metadata.industry || 
+        postData?.industry || 
+        jobPost.post?.user?.companyProfile?.industry || 
+        null;
+      
+      // Extract work time from metadata or post columns
+      const workTime = 
+        metadata.workTime || 
+        postData?.workTime || 
+        null;
+      
+      // Map postType to jobType for frontend compatibility
+      // Priority: metadata.jobType > postType mapping
+      let jobType: string | null = null;
+      const postType = jobPost.post?.postType;
+      
+      // First, check metadata for explicit jobType
+      if (metadata.jobType || metadata.job_type || metadata.type) {
+        jobType = metadata.jobType || metadata.job_type || metadata.type;
+        // Normalize to lowercase for consistency
+        if (jobType) {
+          jobType = jobType.toLowerCase();
+          // Map 'contract' variations to 'contract'
+          if (jobType === 'contract' || jobType === 'contracting') {
+            jobType = 'contract';
+          } else if (jobType === 'freelance' || jobType === 'freelancing') {
+            jobType = 'freelance';
+          } else if (jobType === 'internship' || jobType === 'intern') {
+            jobType = 'internship';
+          }
+        }
+      } else {
+        // Fallback to postType mapping if no metadata jobType
+        if (postType === 'INTERNSHIP') {
+          jobType = 'internship';
+        } else if (postType === 'FREELANCING') {
+          jobType = 'freelance'; // Default for freelancing
+        }
+        // For JOB and GOVT_JOB postType, jobType remains null (regular jobs)
+      }
+
+      job = {
+        id: jobPost.id,
+        postId: jobPost.postId,
+        jobTitle: jobPost.jobTitle,
+        jobDescription: jobPost.jobDescription,
+        companyName, // Added company name
+        jobFunction, // Added job function
+        industry, // Added industry
+        workTime, // Added work time
+        location: jobPost.location,
+        salaryMin: jobPost.salaryMin,
+        salaryMax: jobPost.salaryMax,
+        experience: jobPost.experience,
+        skills: jobPost.skills || [],
+        applicationDeadline: jobPost.applicationDeadline,
+        views: jobPost.views || 0,
+        applications: jobPost.applications || 0,
+        createdAt: jobPost.post?.createdAt || jobPost.createdAt,
+        updatedAt: jobPost.updatedAt,
+        postType: postType,
+        jobType: jobType, // Added jobType field for frontend filtering
+        post: {
+          id: jobPost.postId,
+          postType: postType,
+          user: jobPost.post?.user,
+        },
+        _count: {
+          jobApplications: jobPost._count?.jobApplications || 0,
+          viewActivities: jobPost._count?.viewActivities || 0,
+        },
+      };
+    } else {
+      // Handle Post case (when JobPost doesn't exist)
+      job = (() => {
       const metadata = post.metadata as any || {};
+      
+      // Extract company name from multiple locations (improved extraction)
+      const companyName = 
+        metadata.companyName || 
+        (post as any).companyName || 
+        post.user?.companyProfile?.companyName || 
+        null;
+      
+      // Extract job function from metadata or post columns
+      const jobFunction = 
+        metadata.jobFunction || 
+        (post as any).jobFunction || 
+        null;
+      
+      // Extract industry from multiple locations
+      const industry = 
+        metadata.industry || 
+        (post as any).industry || 
+        post.user?.companyProfile?.industry || 
+        null;
+      
+      // Extract work time from metadata or post columns
+      const workTime = 
+        metadata.workTime || 
+        (post as any).workTime || 
+        null;
+      
+      // Map postType to jobType for frontend compatibility
+      // Priority: metadata.jobType > postType mapping
+      let jobType: string | null = null;
+      
+      // First, check metadata for explicit jobType
+      if (metadata.jobType || metadata.job_type || metadata.type) {
+        jobType = metadata.jobType || metadata.job_type || metadata.type;
+        // Normalize to lowercase for consistency
+        if (jobType) {
+          jobType = jobType.toLowerCase();
+          // Map 'contract' variations to 'contract'
+          if (jobType === 'contract' || jobType === 'contracting') {
+            jobType = 'contract';
+          } else if (jobType === 'freelance' || jobType === 'freelancing') {
+            jobType = 'freelance';
+          } else if (jobType === 'internship' || jobType === 'intern') {
+            jobType = 'internship';
+          }
+        }
+      } else {
+        // Fallback to postType mapping if no metadata jobType
+        if (post.postType === 'INTERNSHIP') {
+          jobType = 'internship';
+        } else if (post.postType === 'FREELANCING') {
+          jobType = 'freelance'; // Default for freelancing
+        }
+        // For JOB and GOVT_JOB postType, jobType remains null (regular jobs)
+      }
+
       return {
         id: post.jobPost?.id || post.id,
         postId: post.id,
         jobTitle: post.jobPost?.jobTitle || post.title,
         jobDescription: post.jobPost?.jobDescription || post.description,
+        companyName, // Added company name
+        jobFunction, // Added job function
+        industry, // Added industry
+        workTime, // Added work time
         location: post.jobPost?.location || metadata.jobLocation || null,
         salaryMin: post.jobPost?.salaryMin || metadata.salaryMin || null,
         salaryMax: post.jobPost?.salaryMax || metadata.salaryMax || null,
@@ -360,6 +704,8 @@ export class JobsService {
         applications: post.jobPost?.applications || post._count.applications || 0,
         createdAt: post.createdAt,
         updatedAt: post.updatedAt,
+        postType: post.postType,
+        jobType: jobType, // Added jobType field for frontend filtering
         post: {
           id: post.id,
           postType: post.postType,
@@ -370,7 +716,8 @@ export class JobsService {
           viewActivities: post.jobPost?._count?.viewActivities || 0,
         },
       };
-    })();
+      })();
+    }
 
     // Track view
     if (userId) {

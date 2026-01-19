@@ -1,6 +1,7 @@
 import { Injectable, Logger, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { NotificationsService } from './notifications.service';
+import { mapNotificationTypeToDataType } from './utils/notification-type-mapper';
 
 @Injectable()
 export class NotificationJobService {
@@ -134,41 +135,95 @@ export class NotificationJobService {
     filterConditions: any;
     status: string;
   }>) {
-    const existingJob = await this.getJobById(id);
+    try {
+      const existingJob = await this.getJobById(id);
 
-    // Recalculate nextSendAt if scheduledAt or frequency changed
-    let nextSendAt = existingJob.nextSendAt;
-    if (data.scheduledAt || data.frequency) {
-      const scheduledAt = data.scheduledAt || existingJob.scheduledAt;
-      const frequency = data.frequency || existingJob.frequency;
+      // Recalculate nextSendAt if scheduledAt or frequency changed
+      let nextSendAt = existingJob.nextSendAt;
+      if (data.scheduledAt || data.frequency) {
+        const scheduledAt = data.scheduledAt || existingJob.scheduledAt;
+        const frequency = data.frequency || existingJob.frequency;
 
-      if (frequency === 'ONCE') {
-        nextSendAt = null;
-      } else if (frequency === 'HOURLY') {
-        nextSendAt = new Date(scheduledAt);
-        nextSendAt.setHours(nextSendAt.getHours() + 1);
-      } else if (frequency === 'DAILY') {
-        nextSendAt = new Date(scheduledAt);
-        nextSendAt.setDate(nextSendAt.getDate() + 1);
-      } else if (frequency === 'WEEKLY') {
-        nextSendAt = new Date(scheduledAt);
-        nextSendAt.setDate(nextSendAt.getDate() + 7);
-      } else if (frequency === 'MONTHLY') {
-        nextSendAt = new Date(scheduledAt);
-        nextSendAt.setMonth(nextSendAt.getMonth() + 1);
+        // Ensure scheduledAt is a Date object
+        const scheduledDate = scheduledAt instanceof Date ? scheduledAt : new Date(scheduledAt);
+        
+        if (isNaN(scheduledDate.getTime())) {
+          throw new BadRequestException('Invalid scheduledAt date');
+        }
+
+        if (frequency === 'ONCE') {
+          nextSendAt = null;
+        } else if (frequency === 'HOURLY') {
+          nextSendAt = new Date(scheduledDate);
+          nextSendAt.setHours(nextSendAt.getHours() + 1);
+        } else if (frequency === 'DAILY') {
+          nextSendAt = new Date(scheduledDate);
+          nextSendAt.setDate(nextSendAt.getDate() + 1);
+        } else if (frequency === 'WEEKLY') {
+          nextSendAt = new Date(scheduledDate);
+          nextSendAt.setDate(nextSendAt.getDate() + 7);
+        } else if (frequency === 'MONTHLY') {
+          nextSendAt = new Date(scheduledDate);
+          nextSendAt.setMonth(nextSendAt.getMonth() + 1);
+        }
       }
+
+      // Filter out undefined values and handle special cases
+      const updateData: any = {};
+      const allowedFields = ['messageType', 'title', 'content', 'image', 'redirectionLink', 'scheduledAt', 'language', 'frequency', 'filterConditions', 'status'];
+      
+      Object.keys(data).forEach(key => {
+        // Only allow known fields
+        if (!allowedFields.includes(key)) {
+          this.logger.warn(`Skipping unknown field: ${key}`);
+          return;
+        }
+        
+        if (data[key] !== undefined) {
+          // Handle image field - accept any string value (including data URIs)
+          if (key === 'image') {
+            const imageValue = data[key] as string;
+            // If empty string, set to null, otherwise keep the value
+            updateData[key] = imageValue && imageValue.trim() !== '' ? imageValue : null;
+          } 
+          // Handle filterConditions - ensure it's an object
+          else if (key === 'filterConditions' && data[key] !== null) {
+            updateData[key] = typeof data[key] === 'object' ? data[key] : {};
+          }
+          // Handle other fields normally
+          else {
+            updateData[key] = data[key];
+          }
+        }
+      });
+
+      // Add nextSendAt if it was recalculated
+      if (data.scheduledAt || data.frequency) {
+        updateData.nextSendAt = nextSendAt;
+      }
+
+      // Only update if there's actual data to update
+      if (Object.keys(updateData).length === 0) {
+        this.logger.warn(`No valid fields to update for notification job ${id}`);
+        return existingJob;
+      }
+
+      this.logger.debug(`Updating notification job ${id} with fields: ${Object.keys(updateData).join(', ')}`);
+
+      const updated = await this.prisma.notificationJob.update({
+        where: { id },
+        data: updateData,
+      });
+
+      this.logger.log(`✅ Updated notification job ${id}`);
+      return updated;
+    } catch (error: any) {
+      if (error instanceof NotFoundException || error instanceof BadRequestException) {
+        throw error;
+      }
+      this.logger.error(`Error updating notification job ${id}: ${error.message}`, error.stack);
+      throw new BadRequestException(`Failed to update notification job: ${error.message}`);
     }
-
-    const updated = await this.prisma.notificationJob.update({
-      where: { id },
-      data: {
-        ...data,
-        nextSendAt,
-      },
-    });
-
-    this.logger.log(`✅ Updated notification job ${id}`);
-    return updated;
   }
 
   async deleteJob(id: string) {
@@ -268,11 +323,21 @@ export class NotificationJobService {
           }
         }
 
+        // Map messageType to data.type for mobile app filtering
+        const dataType = mapNotificationTypeToDataType(job.messageType);
+
         await this.notificationsService.createNotification(user.id, {
           title: job.title,
           message: job.content,
           type: job.messageType as any,
           jobId: job.id, // Link notification to job
+          notificationData: {
+            type: dataType, // Set data.type for mobile app filtering
+            notificationType: job.messageType, // Also include original type
+            jobId: job.id,
+            ...(job.redirectionLink && { redirectUrl: job.redirectionLink }),
+            ...(job.image && { image: job.image }),
+          },
         });
 
         successCount++;

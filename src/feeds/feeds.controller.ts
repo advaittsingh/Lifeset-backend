@@ -61,5 +61,15 @@ export class FeedsController {
   async commentOnFeed(@CurrentUser() user: any, @Param('id') id: string, @Body() data: { comment: string }) {
     return this.feedsService.commentOnFeed(user.id, id, data.comment);
   }
+
+  @Post(':id/register')
+  @ApiOperation({ summary: 'Register for an event feed' })
+  async registerForFeed(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() data?: { interestedAt?: string },
+  ) {
+    return this.feedsService.registerForFeed(user.id, id, data?.interestedAt);
+  }
 }
 

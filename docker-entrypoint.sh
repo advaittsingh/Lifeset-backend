@@ -2,6 +2,21 @@
 
 echo "🚀 Starting LifeSet Backend..."
 
+# Setup SSL certificates if provided
+if [ -n "$SSL_CERT_CONTENT" ] && [ -n "$SSL_KEY_CONTENT" ]; then
+  echo "🔐 Setting up SSL certificates..."
+  mkdir -p /tmp/ssl
+  echo "$SSL_CERT_CONTENT" > /tmp/ssl/cert.pem
+  echo "$SSL_KEY_CONTENT" > /tmp/ssl/key.pem
+  chmod 600 /tmp/ssl/key.pem
+  chmod 644 /tmp/ssl/cert.pem
+  export SSL_CERT_PATH=/tmp/ssl/cert.pem
+  export SSL_KEY_PATH=/tmp/ssl/key.pem
+  echo "✅ SSL certificates configured at /tmp/ssl/"
+else
+  echo "ℹ️  SSL certificates not provided, using HTTP"
+fi
+
 # Check if database is empty (no _prisma_migrations table)
 echo "🔍 Checking database state..."
 MIGRATE_STATUS=$(npx prisma migrate status 2>&1 || echo "error")

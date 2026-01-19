@@ -469,4 +469,22 @@ export class CmsAdminController {
   async deleteChapter(@Param('id') id: string) {
     return this.cmsAdminService.deleteChapter(id);
   }
+
+  // ========== Demo Videos ==========
+  @Get('demo-videos')
+  @ApiOperation({ summary: 'Get demo videos configuration (Admin)' })
+  async getDemoVideos() {
+    return this.cmsAdminService.getDemoVideos();
+  }
+
+  @Put('demo-videos')
+  @ApiOperation({ summary: 'Update demo videos configuration (Admin)' })
+  async updateDemoVideos(
+    @Body() data: {
+      videos?: Record<string, string | null>; // Feature name -> Video URL mapping (wrapped format)
+      [key: string]: any; // Allow direct format: { myCard: "...", networking: null, ... }
+    },
+  ) {
+    return this.cmsAdminService.updateDemoVideos(data);
+  }
 }

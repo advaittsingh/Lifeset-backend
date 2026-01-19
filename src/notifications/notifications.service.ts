@@ -1,12 +1,15 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { NotificationType } from '@/shared';
 import { PushNotificationService } from './push-notification.service';
+import { mapFrontendTypeToDatabaseType } from './utils/notification-type-mapper';
 
 @Injectable()
 export class NotificationsService {
+  private readonly logger = new Logger(NotificationsService.name);
+
   constructor(
     private prisma: PrismaService,
     @InjectQueue('notifications') private notificationsQueue: Queue,
@@ -18,6 +21,7 @@ export class NotificationsService {
     message: string;
     type: NotificationType;
     jobId?: string;
+    notificationData?: Record<string, any>; // Additional data to include in push notification
   }) {
     const notification = await this.prisma.notification.create({
       data: {
@@ -29,22 +33,52 @@ export class NotificationsService {
       },
     });
 
-    // Send push notification
+    // Send push notification with data
     await this.pushNotificationService.sendPushNotification(userId, {
       title: data.title,
       body: data.message,
       data: { 
         type: data.type,
         jobId: data.jobId,
+        ...(data.notificationData || {}), // Merge additional data
       },
     });
 
     return notification;
   }
 
+  /**
+   * Create notification from mobile app
+   * User ID is extracted from JWT token by the controller
+   */
+  async createNotificationFromMobile(userId: string, data: {
+    title: string;
+    message: string;
+    type: NotificationType;
+    data?: Record<string, any>; // Additional data from mobile app
+    isRead?: boolean; // Whether notification is already read
+  }) {
+    // Create notification record in database
+    const notification = await this.prisma.notification.create({
+      data: {
+        userId, // User ID from JWT token
+        title: data.title,
+        message: data.message,
+        type: data.type,
+        isRead: data.isRead || false,
+      },
+    });
+
+    // Note: We don't send push notification here because the mobile app
+    // is creating the notification record itself (likely after receiving a push)
+    // If push notification is needed, it should be sent separately
+
+    return notification;
+  }
+
   async getNotifications(userId: string, filters?: {
     isRead?: boolean;
-    type?: NotificationType;
+    type?: NotificationType | string;
     page?: number;
     limit?: number;
   }) {
@@ -57,7 +91,15 @@ export class NotificationsService {
       where.isRead = filters.isRead;
     }
     if (filters?.type) {
-      where.type = filters.type;
+      // Map frontend type names (e.g., "current-affairs", "ca", "gk") to database enum values
+      // If already in database format, use as-is
+      const mappedType = mapFrontendTypeToDatabaseType(String(filters.type));
+      if (mappedType) {
+        where.type = mappedType;
+      } else {
+        // Fallback: use the type as-is (might be already in database format)
+        where.type = filters.type;
+      }
     }
 
     const [notifications, total] = await Promise.all([
@@ -119,23 +161,132 @@ export class NotificationsService {
   }
 
   async registerToken(userId: string, token: string, platform: string, deviceId?: string) {
-    // Delete existing token if exists
-    await this.prisma.notificationToken.deleteMany({
-      where: {
-        userId,
-        token,
-      },
-    });
+    this.logger.log(`Registering push token for user ${userId}, platform: ${platform}, deviceId: ${deviceId || 'none'}`);
+    
+    // Validate platform
+    if (platform !== 'ios' && platform !== 'android') {
+      throw new BadRequestException(`Invalid platform: ${platform}. Must be 'ios' or 'android'`);
+    }
 
-    // Create new token
-    return this.prisma.notificationToken.create({
-      data: {
-        userId,
-        token,
+    // Validate token
+    if (!token || token.trim().length === 0) {
+      throw new BadRequestException('Token is required and cannot be empty');
+    }
+
+    // Check if this is an Expo push token (starts with "ExponentPushToken[...]")
+    const isExpoToken = token.startsWith('ExponentPushToken[') || token.startsWith('ExpoPushToken[');
+    
+    if (isExpoToken) {
+      // Save Expo token to user record
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { expoPushToken: token },
+      });
+      
+      this.logger.log(`✅ Expo push token saved to user record for user ${userId}`);
+      return {
+        success: true,
+        message: 'Expo push token registered successfully',
+        tokenType: 'expo',
         platform,
-        deviceId,
-        isActive: true,
-      },
+      };
+    }
+
+    // Handle FCM tokens (legacy)
+    try {
+      // Delete existing token if exists (to avoid duplicates)
+      const deleted = await this.prisma.notificationToken.deleteMany({
+        where: {
+          userId,
+          token,
+        },
+      });
+      
+      if (deleted.count > 0) {
+        this.logger.log(`Deleted ${deleted.count} existing token(s) for user ${userId}`);
+      }
+
+      // Create new token
+      const notificationToken = await this.prisma.notificationToken.create({
+        data: {
+          userId,
+          token,
+          platform,
+          deviceId,
+          isActive: true,
+        },
+      });
+
+      this.logger.log(`✅ FCM token registered successfully for user ${userId}, token ID: ${notificationToken.id}`);
+      return {
+        success: true,
+        message: 'Token registered successfully',
+        tokenId: notificationToken.id,
+        platform: notificationToken.platform,
+        tokenType: 'fcm',
+      };
+    } catch (error: any) {
+      this.logger.error(`Failed to register FCM token for user ${userId}: ${error.message}`, error.stack);
+      throw new BadRequestException(`Failed to register token: ${error.message}`);
+    }
+  }
+
+  async saveExpoPushToken(userId: string, token: string) {
+    this.logger.log(`Saving Expo push token for user ${userId}`);
+    
+    // Validate token
+    if (!token || token.trim().length === 0) {
+      throw new BadRequestException('Token is required and cannot be empty');
+    }
+
+    // Validate Expo token format
+    if (!token.startsWith('ExponentPushToken[') && !token.startsWith('ExpoPushToken[')) {
+      throw new BadRequestException('Invalid Expo push token format. Token must start with "ExponentPushToken[" or "ExpoPushToken["');
+    }
+
+    try {
+      // Update user's Expo push token
+      await this.prisma.user.update({
+        where: { id: userId },
+        data: { expoPushToken: token },
+      });
+
+      this.logger.log(`✅ Expo push token saved successfully for user ${userId}`);
+      return {
+        success: true,
+        message: 'Expo push token saved successfully',
+      };
+    } catch (error: any) {
+      this.logger.error(`Failed to save Expo push token for user ${userId}: ${error.message}`, error.stack);
+      throw new BadRequestException(`Failed to save Expo push token: ${error.message}`);
+    }
+  }
+
+  async sendNotification(data: {
+    userIds?: string[];
+    notification: { title: string; body: string };
+    data?: Record<string, any>;
+    redirectUrl?: string;
+    imageUrl?: string;
+  }) {
+    if (!data.userIds || data.userIds.length === 0) {
+      // Send to all users if no userIds provided
+      return this.pushNotificationService.sendPushNotificationToAll({
+        title: data.notification.title,
+        body: data.notification.body,
+        data: data.data,
+        redirectUrl: data.redirectUrl,
+        imageUrl: data.imageUrl,
+      });
+    }
+
+    // Send to specific users
+    return this.pushNotificationService.sendPushNotificationToUsers(data.userIds, {
+      title: data.notification.title,
+      body: data.notification.body,
+      data: data.data,
+      redirectUrl: data.redirectUrl,
+      imageUrl: data.imageUrl,
     });
   }
 }

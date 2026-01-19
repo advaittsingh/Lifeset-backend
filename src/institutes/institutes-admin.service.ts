@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, ConflictException } from '@nestjs/common';
+import { Injectable, BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
 import { UserType } from '@/shared';
@@ -98,14 +98,15 @@ export class InstitutesAdminService {
   }
 
   // ========== Specialisation Management ==========
-  async getSpecialisationData(awardedId?: string) {
+  async getSpecialisationData(courseCategoryId?: string) {
     const where: any = {};
-    if (awardedId) {
-      where.awardedId = awardedId;
+    if (courseCategoryId) {
+      where.courseCategoryId = courseCategoryId;
     }
     return this.prisma.specialisation.findMany({
       where,
       include: {
+        courseCategory: true,
         awarded: {
           include: {
             courseCategory: true,
@@ -117,7 +118,52 @@ export class InstitutesAdminService {
     });
   }
 
-  async createSpecialisation(data: { name: string; description?: string; awardedId: string; isActive?: boolean }) {
+  /**
+   * Find specialisations by course category ID
+   * @param courseCategoryId - The course category ID to filter by
+   * @returns Array of specialisations for the given category
+   */
+  async findByCategoryId(courseCategoryId: string) {
+    return this.prisma.specialisation.findMany({
+      where: {
+        courseCategoryId,
+      },
+      include: {
+        courseCategory: true,
+        awarded: {
+          include: {
+            courseCategory: true,
+          },
+        },
+        _count: { select: { courses: true } },
+      },
+      orderBy: { name: 'asc' },
+    });
+  }
+
+  async createSpecialisation(data: { name: string; description?: string; courseCategoryId: string; awardedId?: string; mainCategory?: string; isActive?: boolean }) {
+    // Validate course category exists
+    const category = await this.prisma.courseCategory.findUnique({
+      where: { id: data.courseCategoryId },
+    });
+    if (!category) {
+      throw new BadRequestException('Course category not found');
+    }
+
+    // Validate awarded if provided
+    if (data.awardedId) {
+      const awarded = await this.prisma.awarded.findUnique({
+        where: { id: data.awardedId },
+      });
+      if (!awarded) {
+        throw new BadRequestException('Awarded not found');
+      }
+      // Validate that awarded belongs to the same course category
+      if (awarded.courseCategoryId !== data.courseCategoryId) {
+        throw new BadRequestException('Awarded does not belong to the specified course category');
+      }
+    }
+
     return this.prisma.specialisation.create({ 
       data: {
         ...data,
@@ -126,7 +172,41 @@ export class InstitutesAdminService {
     });
   }
 
-  async updateSpecialisation(id: string, data: { name?: string; description?: string; awardedId?: string; isActive?: boolean }) {
+  async updateSpecialisation(id: string, data: { name?: string; description?: string; courseCategoryId?: string; awardedId?: string; mainCategory?: string; isActive?: boolean }) {
+    // Validate course category if provided
+    if (data.courseCategoryId) {
+      const category = await this.prisma.courseCategory.findUnique({
+        where: { id: data.courseCategoryId },
+      });
+      if (!category) {
+        throw new BadRequestException('Course category not found');
+      }
+    }
+
+    // Validate awarded if provided
+    if (data.awardedId) {
+      const awarded = await this.prisma.awarded.findUnique({
+        where: { id: data.awardedId },
+      });
+      if (!awarded) {
+        throw new BadRequestException('Awarded not found');
+      }
+
+      // Get current specialisation to check course category
+      const specialisation = await this.prisma.specialisation.findUnique({
+        where: { id },
+      });
+      if (!specialisation) {
+        throw new NotFoundException('Specialisation not found');
+      }
+
+      const targetCategoryId = data.courseCategoryId || specialisation.courseCategoryId;
+      // Validate that awarded belongs to the same course category
+      if (awarded.courseCategoryId !== targetCategoryId) {
+        throw new BadRequestException('Awarded does not belong to the specified course category');
+      }
+    }
+
     return this.prisma.specialisation.update({ where: { id }, data });
   }
 
@@ -194,24 +274,40 @@ export class InstitutesAdminService {
     return results;
   }
 
-  async bulkUploadSpecialisation(csvData: Array<{ name: string; description?: string; awardedId: string; isActive?: boolean }>) {
+  async bulkUploadSpecialisation(csvData: Array<{ name: string; description?: string; courseCategoryId: string; awardedId?: string; isActive?: boolean }>) {
     const results = [];
     for (const row of csvData) {
       try {
-        // Check if awarded exists
-        const awarded = await this.prisma.awarded.findUnique({
-          where: { id: row.awardedId },
+        // Check if course category exists
+        const category = await this.prisma.courseCategory.findUnique({
+          where: { id: row.courseCategoryId },
         });
-        if (!awarded) {
-          results.push({ row, success: false, error: 'Awarded not found' });
+        if (!category) {
+          results.push({ row, success: false, error: 'Course category not found' });
           continue;
         }
 
-        // Check if specialisation already exists by name and awarded
+        // Validate awarded if provided
+        if (row.awardedId) {
+          const awarded = await this.prisma.awarded.findUnique({
+            where: { id: row.awardedId },
+          });
+          if (!awarded) {
+            results.push({ row, success: false, error: 'Awarded not found' });
+            continue;
+          }
+          // Validate that awarded belongs to the same course category
+          if (awarded.courseCategoryId !== row.courseCategoryId) {
+            results.push({ row, success: false, error: 'Awarded does not belong to the specified course category' });
+            continue;
+          }
+        }
+
+        // Check if specialisation already exists by name and course category
         const existing = await this.prisma.specialisation.findFirst({
           where: {
             name: row.name,
-            awardedId: row.awardedId,
+            courseCategoryId: row.courseCategoryId,
           },
         });
 
@@ -221,6 +317,7 @@ export class InstitutesAdminService {
             where: { id: existing.id },
             data: {
               description: row.description,
+              awardedId: row.awardedId,
               isActive: row.isActive !== undefined ? row.isActive : true,
             },
           });
@@ -231,6 +328,7 @@ export class InstitutesAdminService {
             data: {
               name: row.name,
               description: row.description,
+              courseCategoryId: row.courseCategoryId,
               awardedId: row.awardedId,
               isActive: row.isActive !== undefined ? row.isActive : true,
             },
@@ -271,9 +369,20 @@ export class InstitutesAdminService {
     if (data.facultyHeadEmail) {
       const existingUser = await this.prisma.user.findUnique({
         where: { email: data.facultyHeadEmail },
+        include: {
+          collegeProfile: {
+            select: {
+              id: true,
+              collegeName: true,
+            },
+          },
+        },
       });
       if (existingUser) {
-        throw new BadRequestException('Faculty head email already registered');
+        const instituteName = existingUser.collegeProfile?.collegeName || 'an existing institute';
+        throw new BadRequestException(
+          `Faculty head email already registered. This email is associated with ${instituteName}. Please use a different email or update the existing institute.`
+        );
       }
     }
 
@@ -281,9 +390,20 @@ export class InstitutesAdminService {
     if (data.facultyHeadContact) {
       const existingUser = await this.prisma.user.findUnique({
         where: { mobile: data.facultyHeadContact },
+        include: {
+          collegeProfile: {
+            select: {
+              id: true,
+              collegeName: true,
+            },
+          },
+        },
       });
       if (existingUser) {
-        throw new BadRequestException('Faculty head contact number already registered');
+        const instituteName = existingUser.collegeProfile?.collegeName || 'an existing institute';
+        throw new BadRequestException(
+          `Faculty head contact number already registered. This number is associated with ${instituteName}. Please use a different contact number or update the existing institute.`
+        );
       }
     }
 
@@ -356,6 +476,64 @@ export class InstitutesAdminService {
     return this.prisma.college.update({ where: { id }, data });
   }
 
+  async deleteInstitute(id: string) {
+    // Check if institute exists
+    const institute = await this.prisma.college.findUnique({
+      where: { id },
+      include: {
+        _count: {
+          select: {
+            courses: true,
+            students: true,
+          },
+        },
+      },
+    });
+
+    if (!institute) {
+      throw new NotFoundException('Institute not found');
+    }
+
+    // Check for dependencies and prevent deletion if they exist
+    const dependencyMessages: string[] = [];
+
+    if (institute._count.courses > 0) {
+      dependencyMessages.push(`${institute._count.courses} course(s)`);
+    }
+
+    if (institute._count.students > 0) {
+      dependencyMessages.push(`${institute._count.students} student(s)`);
+    }
+
+    if (dependencyMessages.length > 0) {
+      throw new BadRequestException(
+        `Cannot delete institute: it has ${dependencyMessages.join(' and ')} associated with it. Please delete or reassign these dependencies first.`
+      );
+    }
+
+    // If no dependencies, proceed with deletion in a transaction
+    // Note: CollegeSections have onDelete: Cascade, so they'll be automatically deleted
+    return this.prisma.$transaction(async (tx) => {
+      // Delete the college (sections will cascade automatically)
+      await tx.college.delete({
+        where: { id },
+      });
+
+      // Clean up any CollegeProfile records that match this college name
+      // (These are created when the institute is created)
+      await tx.collegeProfile.deleteMany({
+        where: {
+          collegeName: institute.name,
+        },
+      });
+
+      return {
+        success: true,
+        message: 'Institute deleted successfully',
+      };
+    });
+  }
+
   async getInstituteById(id: string) {
     return this.prisma.college.findUnique({
       where: { id },
@@ -379,6 +557,11 @@ export class InstitutesAdminService {
     collegeId: string;
     categoryId?: string;
     specialisationId?: string;
+    awardedId?: string; // Optional, for validation purposes (not stored in Course model)
+    affiliationId?: string; // Optional, redundant with collegeId (not stored in Course model)
+    section?: string; // Optional, not stored in Course model
+    courseMode?: string; // Optional, not stored in Course model
+    level?: string; // Optional, not stored in Course model
     code?: string;
     duration?: string;
     description?: string;
@@ -414,19 +597,161 @@ export class InstitutesAdminService {
       }
     }
 
-    return this.prisma.course.create({ data });
+    // Validate awarded if provided (awarded is independent of specialisation)
+    if (data.awardedId) {
+      const awarded = await this.prisma.awarded.findUnique({
+        where: { id: data.awardedId },
+      });
+      if (!awarded) {
+        throw new BadRequestException('Awarded not found');
+      }
+    }
+
+    // Remove fields that don't exist in Course model before creating course
+    const { awardedId, affiliationId, section, courseMode, level, ...courseData } = data;
+    return this.prisma.course.create({ data: courseData });
+  }
+
+  async getCourseById(id: string) {
+    const course = await this.prisma.course.findUnique({
+      where: { id },
+      include: {
+        category: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        specialisation: {
+          include: {
+            awarded: {
+              include: {
+                courseCategory: {
+                  select: {
+                    id: true,
+                    name: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+        college: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+    });
+
+    if (!course) {
+      return null;
+    }
+
+    // Enhance course data with fields the frontend expects for editing
+    return {
+      ...course,
+      // Derive awardedId from specialisation if it exists
+      awardedId: course.specialisation?.awardedId || null,
+      // affiliationId is the collegeId (for frontend compatibility)
+      affiliationId: course.collegeId || null,
+      // These fields aren't stored in the database, return null/empty for frontend
+      section: null,
+      courseMode: null,
+      level: null,
+    };
   }
 
   async updateCourse(id: string, data: any) {
-    return this.prisma.course.update({ where: { id }, data });
+    // Remove fields that don't exist in Course model before updating
+    const { awardedId, affiliationId, section, courseMode, level, ...courseData } = data;
+    return this.prisma.course.update({ where: { id }, data: courseData });
+  }
+
+  async deleteCourse(id: string) {
+    // Check if course exists
+    const course = await this.prisma.course.findUnique({
+      where: { id },
+      include: {
+        _count: {
+          select: {
+            students: true,
+            assignments: true,
+          },
+        },
+      },
+    });
+
+    if (!course) {
+      throw new NotFoundException('Course not found');
+    }
+
+    // Check for dependencies and prevent deletion if they exist
+    const dependencyMessages: string[] = [];
+
+    if (course._count.students > 0) {
+      dependencyMessages.push(`${course._count.students} student(s)`);
+    }
+
+    if (dependencyMessages.length > 0) {
+      throw new BadRequestException(
+        `Cannot delete course: it has ${dependencyMessages.join(' and ')} enrolled in it. Please remove or reassign these students first.`
+      );
+    }
+
+    // If no dependencies, proceed with deletion
+    // Note: CourseAssignments have onDelete: Cascade, so they'll be automatically deleted
+    await this.prisma.course.delete({
+      where: { id },
+    });
+
+    return {
+      success: true,
+      message: 'Course deleted successfully',
+    };
   }
 
   async getCoursesByInstitute(instituteId: string) {
-    return this.prisma.course.findMany({
+    const courses = await this.prisma.course.findMany({
       where: { collegeId: instituteId },
-      include: { category: true },
+      include: { 
+        category: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+        specialisation: {
+          include: {
+            awarded: {
+              include: {
+                courseCategory: {
+                  select: {
+                    id: true,
+                    name: true,
+                  },
+                },
+              },
+            },
+          },
+        },
+      },
       orderBy: { name: 'asc' },
     });
+
+    // Enhance courses with fields the frontend expects
+    return courses.map(course => ({
+      ...course,
+      // Derive awardedId from specialisation if it exists
+      awardedId: course.specialisation?.awardedId || null,
+      // affiliationId is the collegeId (for frontend compatibility)
+      affiliationId: course.collegeId || null,
+      // These fields aren't stored in the database, return null/empty for frontend
+      section: null,
+      courseMode: null,
+      level: null,
+    }));
   }
 
   // ========== Student Dashboard & Reports ==========
@@ -577,59 +902,68 @@ export class InstitutesAdminService {
     page?: number;
     limit?: number;
   }) {
-    const page = filters.page || 1;
-    const limit = filters.limit || 20;
-    const skip = (page - 1) * limit;
+    try {
+      const page = filters.page || 1;
+      const limit = Math.min(filters.limit || 20, 1000); // Cap limit at 1000
+      const skip = (page - 1) * limit;
 
-    const where: any = { isActive: true };
+      const where: any = { isActive: true };
 
-    if (filters.search) {
-      where.OR = [
-        { name: { contains: filters.search, mode: 'insensitive' } },
-        { city: { contains: filters.search, mode: 'insensitive' } },
-        { state: { contains: filters.search, mode: 'insensitive' } },
-      ];
-    }
+      if (filters.search) {
+        where.OR = [
+          { name: { contains: filters.search, mode: 'insensitive' } },
+          { city: { contains: filters.search, mode: 'insensitive' } },
+          { state: { contains: filters.search, mode: 'insensitive' } },
+        ];
+      }
 
-    if (filters.city) {
-      where.city = { contains: filters.city, mode: 'insensitive' };
-    }
+      if (filters.city) {
+        where.city = { contains: filters.city, mode: 'insensitive' };
+      }
 
-    if (filters.state) {
-      where.state = { contains: filters.state, mode: 'insensitive' };
-    }
+      if (filters.state) {
+        where.state = { contains: filters.state, mode: 'insensitive' };
+      }
 
-    if (filters.type) {
-      where.type = filters.type;
-    }
+      // Note: College model doesn't have a 'type' field, so we skip that filter
+      // if (filters.type) {
+      //   where.type = filters.type;
+      // }
 
-    const [institutes, total] = await Promise.all([
-      this.prisma.college.findMany({
-        where,
-        skip,
-        take: limit,
-        include: {
-          _count: {
-            select: {
-              students: true,
-              courses: true,
+      const [institutes, total] = await Promise.all([
+        this.prisma.college.findMany({
+          where,
+          skip,
+          take: limit,
+          include: {
+            _count: {
+              select: {
+                students: true,
+                courses: true,
+              },
             },
           },
-        },
-        orderBy: { name: 'asc' },
-      }),
-      this.prisma.college.count({ where }),
-    ]);
+          orderBy: { name: 'asc' },
+        }),
+        this.prisma.college.count({ where }),
+      ]);
 
-    return {
-      data: institutes,
-      pagination: {
-        page,
-        limit,
-        total,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
+      return {
+        data: institutes,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
+      };
+    } catch (error: any) {
+      // Log the error for debugging
+      console.error('Error in searchInstitutes:', error);
+      throw new BadRequestException(
+        `Failed to fetch institutes: ${error.message || 'Unknown error'}`
+      );
+    }
   }
 }
 

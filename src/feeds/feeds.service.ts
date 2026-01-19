@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { AnalyticsService } from '../analytics/analytics.service';
+import { CmsService } from '../cms/cms.service';
 import { FeedType } from '@/shared';
 import { parseYearlySalary, validateCandidateQualities } from '../common/utils/validation.helpers';
 import { updateCategoryPostCount } from '../common/utils/category.helpers';
@@ -10,6 +11,7 @@ export class FeedsService {
   constructor(
     private prisma: PrismaService,
     private analytics: AnalyticsService,
+    private cmsService: CmsService,
   ) {}
 
   async createFeed(userId: string, data: {
@@ -18,6 +20,8 @@ export class FeedsService {
     postType: FeedType;
     categoryId?: string;
     images?: string[];
+    isActive?: boolean;
+    isPublished?: boolean;
     // Job fields (now as direct properties, not in metadata)
     companyName?: string;
     industry?: string;
@@ -121,15 +125,27 @@ export class FeedsService {
       }
     }
 
+    // Set isActive based on isPublished if provided
+    const isActive = data.isPublished === true ? true : (data.isActive !== undefined ? data.isActive : true);
+
     try {
+      // Auto-set jobType based on postType if not explicitly provided
+      let jobType = data.jobType;
+      if (!jobType && data.postType === 'INTERNSHIP') {
+        jobType = 'internship';
+      } else if (!jobType && data.postType === 'FREELANCING') {
+        jobType = 'freelance'; // Default for freelancing
+      }
+
       const feed = await this.prisma.post.create({
         data: {
           userId,
           title: data.title,
-          description: data.description,
+          description: data.description, // Store HTML as-is
           postType: data.postType,
           categoryId: data.categoryId,
           images: data.images || [],
+          isActive,
           // Job fields (now as columns)
           // Job fields removed from schema - storing in metadata if needed
           metadata: {
@@ -145,7 +161,7 @@ export class FeedsService {
             ...(data.skills && data.skills.length > 0 && { skills: data.skills }),
             ...(data.jobFunction && { jobFunction: data.jobFunction }),
             ...(data.experience && { experience: String(data.experience) }),
-            ...(data.jobType && { jobType: data.jobType }),
+            ...(jobType && { jobType: jobType }), // Use auto-set or provided jobType
             ...(data.capacity && { capacity: String(data.capacity) }),
             ...(data.workTime && { workTime: data.workTime }),
             ...(data.perksAndBenefits && { perksAndBenefits: data.perksAndBenefits }),
@@ -156,21 +172,25 @@ export class FeedsService {
             ...(data.privateFiltersCourse && { privateFiltersCourse: data.privateFiltersCourse }),
             ...(data.privateFiltersCourseCategory && { privateFiltersCourseCategory: data.privateFiltersCourseCategory }),
             ...(data.privateFiltersYear && { privateFiltersYear: data.privateFiltersYear }),
+            ...(data.isPublished !== undefined && { isPublished: data.isPublished }),
           },
         },
       });
 
-      // Track event (don't fail if analytics fails)
-      try {
-        await this.analytics.trackEvent(userId, 'feed_created', 'feed', feed.id);
-      } catch (analyticsError) {
+      // Return feed immediately, then do background tasks
+      // This prevents timeout issues with slow analytics or category updates
+      
+      // Track event in background (don't fail if analytics fails)
+      this.analytics.trackEvent(userId, 'feed_created', 'feed', feed.id).catch((analyticsError) => {
         // Log but don't fail the request if analytics fails
         console.warn('Analytics tracking failed:', analyticsError);
-      }
+      });
 
-      // Update category postCount
+      // Update category postCount in background
       if (feed.categoryId) {
-        await updateCategoryPostCount(this.prisma, feed.categoryId);
+        updateCategoryPostCount(this.prisma, feed.categoryId).catch((error) => {
+          console.warn('Failed to update category post count:', error);
+        });
       }
 
       return feed;
@@ -457,6 +477,27 @@ export class FeedsService {
 
     // Extract full content from metadata for articles
     const metadata = feed.metadata as any || {};
+    
+    // Map postType to jobType for frontend compatibility (for job feeds)
+    let jobType: string | null = null;
+    if (feed.postType === 'INTERNSHIP') {
+      jobType = 'internship';
+    } else if (feed.postType === 'FREELANCING') {
+      // Check metadata first, then default to 'freelance'
+      jobType = metadata.jobType || metadata.job_type || metadata.type || 'freelance';
+      // Normalize to lowercase for consistency
+      if (jobType) {
+        jobType = jobType.toLowerCase();
+        // Map 'contract' variations to 'contract'
+        if (jobType === 'contract' || jobType === 'contracting') {
+          jobType = 'contract';
+        } else if (jobType === 'freelance' || jobType === 'freelancing') {
+          jobType = 'freelance';
+        }
+      }
+    }
+    // For JOB and GOVT_JOB postType, jobType remains null (regular jobs)
+    
     return {
       ...feed,
       // Extract full content from metadata - this is the full article text with HTML formatting
@@ -465,6 +506,8 @@ export class FeedsService {
       quickViewContent: metadata.quickViewContent || null,
       headline: metadata.headline || null,
       articleDate: metadata.articleDate || null,
+      isPublished: metadata.isPublished !== undefined ? metadata.isPublished : feed.isActive, // Extract isPublished from metadata
+      jobType: jobType, // Added jobType field for frontend filtering (for job feeds)
     };
   }
 
@@ -660,6 +703,37 @@ export class FeedsService {
         totalPages: Math.ceil(total / limit),
       },
     };
+  }
+
+  async registerForFeed(userId: string, feedId: string, interestedAt?: string) {
+    try {
+      // Verify feed exists and check if it's an event
+      const feed = await this.prisma.post.findUnique({
+        where: { id: feedId },
+        select: { postType: true, isActive: true },
+      });
+
+      if (!feed) {
+        throw new NotFoundException('Feed not found');
+      }
+
+      if (!feed.isActive) {
+        throw new NotFoundException('Feed is not active');
+      }
+
+      // If it's an event, use the CMS service to register
+      if (feed.postType === 'EVENT') {
+        return this.cmsService.recordEventInterest(userId, feedId, interestedAt);
+      }
+
+      // For non-event feeds, return an error
+      throw new BadRequestException('Registration is only available for event feeds');
+    } catch (error: any) {
+      if (error instanceof NotFoundException || error instanceof BadRequestException) {
+        throw error;
+      }
+      throw new BadRequestException(`Failed to register for feed: ${error.message}`);
+    }
   }
 }
 

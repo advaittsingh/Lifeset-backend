@@ -52,12 +52,16 @@ export class ChatService {
       },
     });
 
-    // Send notification to receiver
+    // Create notification for receiver and send push notification
     try {
       await this.notificationsService.createNotification(receiverId, {
         title: 'New Message',
         message: `${senderName}: ${message.substring(0, 100)}${message.length > 100 ? '...' : ''}`,
         type: NotificationType.CHAT,
+        notificationData: {
+          userId: senderId,
+          messageId: createdMessage.id,
+        },
       });
     } catch (error) {
       console.error('Error sending notification:', error);

@@ -1,0 +1,226 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'LifeSet Platform EC2 Instance - Backend API Server'
+
+Parameters:
+  ProjectName:
+    Type: String
+    Default: lifeset
+    Description: Project name for resource naming
+  
+  Environment:
+    Type: String
+    Default: production
+    AllowedValues: [production, staging, development]
+    Description: Environment name
+  
+  InstanceType:
+    Type: String
+    Default: t3.medium
+    AllowedValues: [t3.micro, t3.small, t3.medium, t3.large, t3.xlarge]
+    Description: EC2 instance type
+  
+  KeyPairName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: EC2 Key Pair name for SSH access
+  
+  VPCId:
+    Type: String
+    Description: VPC ID (from main infrastructure stack)
+  
+  SubnetId:
+    Type: String
+    Description: Subnet ID (public subnet for EC2)
+  
+  SecurityGroupId:
+    Type: String
+    Description: Security Group ID for EC2 (from main infrastructure or create new)
+  
+  AllowedSSHCidr:
+    Type: String
+    Default: 0.0.0.0/0
+    Description: CIDR block allowed to SSH to EC2 instance
+
+Resources:
+  # EC2 Security Group (if not provided)
+  EC2SecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Condition: CreateSecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectName}-${Environment}-ec2-sg'
+      GroupDescription: Security group for EC2 backend instance
+      VpcId: !Ref VPCId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref AllowedSSHCidr
+          Description: SSH access
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+          Description: HTTP access
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: HTTPS access
+        - IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
+          CidrIp: 0.0.0.0/0
+          Description: Backend API access
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-ec2-sg'
+
+  # IAM Role for EC2 Instance
+  EC2InstanceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-${Environment}-ec2-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy
+      Policies:
+        - PolicyName: SecretsManagerAccess
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - secretsmanager:GetSecretValue
+                  - secretsmanager:DescribeSecret
+                Resource: 
+                  - !Sub 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:lifeset/${Environment}/*'
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: '*'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-ec2-role'
+
+  EC2InstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      InstanceProfileName: !Sub '${ProjectName}-${Environment}-ec2-profile'
+      Roles:
+        - !Ref EC2InstanceRole
+
+  # EC2 Instance
+  BackendEC2Instance:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: !Sub '{{resolve:ssm:/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2}}'
+      InstanceType: !Ref InstanceType
+      KeyName: !Ref KeyPairName
+      IamInstanceProfile: !Ref EC2InstanceProfile
+      SubnetId: !Ref SubnetId
+      SecurityGroupIds:
+        - !If [CreateSecurityGroup, !Ref EC2SecurityGroup, !Ref SecurityGroupId]
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          yum update -y
+          
+          # Install Node.js 20.x
+          curl -fsSL https://rpm.nodesource.com/setup_20.x | bash -
+          yum install -y nodejs
+          
+          # Install Docker (optional, for containerized deployment)
+          yum install -y docker
+          systemctl start docker
+          systemctl enable docker
+          usermod -aG docker ec2-user
+          
+          # Install other dependencies
+          yum install -y git curl wget unzip
+          
+          # Install AWS CLI v2
+          cd /tmp
+          curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+          unzip awscliv2.zip
+          ./aws/install
+          
+          # Install PM2 for process management
+          npm install -g pm2
+          
+          # Create application directory
+          mkdir -p /opt/lifeset-backend
+          chown ec2-user:ec2-user /opt/lifeset-backend
+          
+          # Create SSL directory
+          mkdir -p /opt/lifeset-backend/ssl
+          chmod 700 /opt/lifeset-backend/ssl
+          chown ec2-user:ec2-user /opt/lifeset-backend/ssl
+          
+          # Create logs directory
+          mkdir -p /var/log/lifeset-backend
+          chown ec2-user:ec2-user /var/log/lifeset-backend
+          
+          # Install CloudWatch agent
+          wget https://s3.amazonaws.com/amazoncloudwatch-agent/amazon_linux/amd64/latest/amazon-cloudwatch-agent.rpm
+          rpm -U ./amazon-cloudwatch-agent.rpm
+          
+          # Signal CloudFormation that user data completed
+          /opt/aws/bin/cfn-signal -e $? --stack ${AWS::StackName} --resource BackendEC2Instance --region ${AWS::Region}
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-backend-ec2'
+        - Key: Environment
+          Value: !Ref Environment
+        - Key: Project
+          Value: !Ref ProjectName
+
+  # Elastic IP (optional, for static IP)
+  ElasticIP:
+    Type: AWS::EC2::EIP
+    Properties:
+      Domain: vpc
+      InstanceId: !Ref BackendEC2Instance
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-${Environment}-backend-eip'
+
+Conditions:
+  CreateSecurityGroup: !Equals [!Ref SecurityGroupId, '']
+
+Outputs:
+  EC2InstanceId:
+    Description: EC2 Instance ID
+    Value: !Ref BackendEC2Instance
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-EC2InstanceId'
+
+  EC2InstancePublicIP:
+    Description: EC2 Instance Public IP
+    Value: !GetAtt BackendEC2Instance.PublicIp
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-EC2InstancePublicIP'
+
+  EC2InstancePrivateIP:
+    Description: EC2 Instance Private IP
+    Value: !GetAtt BackendEC2Instance.PrivateIp
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-EC2InstancePrivateIP'
+
+  EC2InstanceRoleArn:
+    Description: IAM Role ARN for EC2 instance
+    Value: !GetAtt EC2InstanceRole.Arn
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-EC2InstanceRoleArn'
+
+  ElasticIPAddress:
+    Description: Elastic IP Address
+    Value: !Ref ElasticIP
+    Condition: CreateElasticIP
+    Export:
+      Name: !Sub '${ProjectName}-${Environment}-ElasticIPAddress'

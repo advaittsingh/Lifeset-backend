@@ -369,7 +369,9 @@ export class ProfilesService {
       // Competitive Exams
       'competitiveExams',
       // Media
-      'introVideo', 'resume'
+      'introVideo', 'resume',
+      // Self Introduction
+      'selfIntro'
     ];
 
     // Extract nested fields and arrays (not direct StudentProfile fields)

@@ -7,6 +7,8 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { UserType } from '@/shared';
 import { CreateInstituteDto } from './dto/create-institute.dto';
 import { CreateCourseDto } from './dto/create-course.dto';
+import { CreateSpecialisationDto } from './dto/create-specialisation.dto';
+import { UpdateSpecialisationDto } from './dto/update-specialisation.dto';
 
 @ApiTags('Institutes Admin')
 @Controller('admin/institutes')
@@ -69,19 +71,19 @@ export class InstitutesAdminController {
   // ========== Specialisation Management ==========
   @Get('course-master/specialisations')
   @ApiOperation({ summary: 'Get specialisation data (Admin)' })
-  async getSpecialisationData(@Query('awardedId') awardedId?: string) {
-    return this.institutesAdminService.getSpecialisationData(awardedId);
+  async getSpecialisationData(@Query('courseCategoryId') courseCategoryId?: string) {
+    return this.institutesAdminService.getSpecialisationData(courseCategoryId);
   }
 
   @Post('course-master/specialisations')
   @ApiOperation({ summary: 'Create specialisation (Admin)' })
-  async createSpecialisation(@Body() data: any) {
+  async createSpecialisation(@Body() data: CreateSpecialisationDto) {
     return this.institutesAdminService.createSpecialisation(data);
   }
 
   @Put('course-master/specialisations/:id')
   @ApiOperation({ summary: 'Update specialisation (Admin)' })
-  async updateSpecialisation(@Param('id') id: string, @Body() data: any) {
+  async updateSpecialisation(@Param('id') id: string, @Body() data: UpdateSpecialisationDto) {
     return this.institutesAdminService.updateSpecialisation(id, data);
   }
 
@@ -100,7 +102,7 @@ export class InstitutesAdminController {
 
   @Post('course-master/specialisations/bulk-upload')
   @ApiOperation({ summary: 'Bulk upload specialisations from CSV data (Admin)' })
-  async bulkUploadSpecialisation(@Body() body: { data: Array<{ name: string; description?: string; awardedId: string; isActive?: boolean }> }) {
+  async bulkUploadSpecialisation(@Body() body: { data: Array<{ name: string; description?: string; courseCategoryId: string; isActive?: boolean }> }) {
     return this.institutesAdminService.bulkUploadSpecialisation(body.data);
   }
 
@@ -121,6 +123,12 @@ export class InstitutesAdminController {
   @ApiOperation({ summary: 'Update institute (Admin)' })
   async updateInstitute(@Param('id') id: string, @Body() data: any) {
     return this.institutesAdminService.updateInstitute(id, data);
+  }
+
+  @Delete(':id')
+  @ApiOperation({ summary: 'Delete institute (Admin)' })
+  async deleteInstitute(@Param('id') id: string) {
+    return this.institutesAdminService.deleteInstitute(id);
   }
 
   @Get(':id')
@@ -151,10 +159,22 @@ export class InstitutesAdminController {
     return this.institutesAdminService.getCoursesByInstitute(id);
   }
 
+  @Get('courses/:id')
+  @ApiOperation({ summary: 'Get course by ID (Admin)' })
+  async getCourseById(@Param('id') id: string) {
+    return this.institutesAdminService.getCourseById(id);
+  }
+
   @Put('courses/:id')
   @ApiOperation({ summary: 'Update course (Admin)' })
   async updateCourse(@Param('id') id: string, @Body() data: any) {
     return this.institutesAdminService.updateCourse(id, data);
+  }
+
+  @Delete('courses/:id')
+  @ApiOperation({ summary: 'Delete course (Admin)' })
+  async deleteCourse(@Param('id') id: string) {
+    return this.institutesAdminService.deleteCourse(id);
   }
 
   // ========== Student Dashboard & Reports ==========

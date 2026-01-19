@@ -226,19 +226,51 @@ export class McqService {
 
       this.logger.log(`✅ MCQ found ${questions.length} questions (total: ${total})`);
 
-      // Get answered status for user if provided
-      let answeredStatusMap: Record<string, { isAnswered: boolean; answeredAt: Date | null }> = {};
-      if (userId) {
-        const answeredRecords = await this.prisma.mcqAnswered.findMany({
-          where: {
-            userId,
-            questionId: { in: questions.map(q => q.id) },
-          },
+      // Get answered status and attempt information for user if provided
+      let answeredStatusMap: Record<string, { isAnswered: boolean; answeredAt: Date | null; isCorrect: boolean | null; lastAttemptId: string | null }> = {};
+      if (userId && questions.length > 0) {
+        const questionIds = questions.map(q => q.id);
+        
+        // Fetch answered records and attempts in parallel
+        const [answeredRecords, attempts] = await Promise.all([
+          this.prisma.mcqAnswered.findMany({
+            where: {
+              userId,
+              questionId: { in: questionIds },
+            },
+          }),
+          this.prisma.mcqAttempt.findMany({
+            where: {
+              userId,
+              questionId: { in: questionIds },
+            },
+            orderBy: { createdAt: 'desc' },
+            select: {
+              id: true,
+              questionId: true,
+              isCorrect: true,
+            },
+          }),
+        ]);
+
+        // Group attempts by questionId to get the most recent one
+        const attemptsByQuestion = new Map<string, { id: string; isCorrect: boolean }>();
+        attempts.forEach(attempt => {
+          if (!attemptsByQuestion.has(attempt.questionId)) {
+            attemptsByQuestion.set(attempt.questionId, { id: attempt.id, isCorrect: attempt.isCorrect });
+          }
         });
-        answeredStatusMap = answeredRecords.reduce((acc, record) => {
-          acc[record.questionId] = { isAnswered: true, answeredAt: record.answeredAt };
-          return acc;
-        }, {} as Record<string, { isAnswered: boolean; answeredAt: Date | null }>);
+
+        // Build answered status map
+        answeredRecords.forEach(record => {
+          const lastAttempt = attemptsByQuestion.get(record.questionId);
+          answeredStatusMap[record.questionId] = {
+            isAnswered: true,
+            answeredAt: record.answeredAt,
+            isCorrect: lastAttempt ? lastAttempt.isCorrect : null,
+            lastAttemptId: lastAttempt ? lastAttempt.id : null,
+          };
+        });
       }
 
       // Batch fetch subcategories and chapters to avoid N+1 queries
@@ -291,13 +323,20 @@ export class McqService {
         };
       });
 
-      // Add answered status, solution, and articleId to each question
+      // Add answered status, attempt info, solution, and articleId to each question
       const questionsWithMetadata = enhancedQuestions.map(question => {
-        const answeredStatus = answeredStatusMap[question.id] || { isAnswered: false, answeredAt: null };
+        const answeredStatus = answeredStatusMap[question.id] || {
+          isAnswered: false,
+          answeredAt: null,
+          isCorrect: null,
+          lastAttemptId: null,
+        };
         return {
           ...question,
           isAnswered: answeredStatus.isAnswered,
           answeredAt: answeredStatus.answeredAt,
+          isCorrect: answeredStatus.isCorrect, // Include whether the last attempt was correct
+          lastAttemptId: answeredStatus.lastAttemptId,
           solution: question.solution || null,
           articleId: question.articleId || null,
         };
@@ -338,21 +377,43 @@ export class McqService {
       throw new NotFoundException('Question not found');
     }
 
-    // Get answered status for user if provided
+    // Get answered status and attempt information for user if provided
     let isAnswered = false;
     let answeredAt: Date | null = null;
+    let isCorrect: boolean | null = null;
+    let lastAttemptId: string | null = null;
+    
     if (userId) {
-      const answeredRecord = await this.prisma.mcqAnswered.findUnique({
-        where: {
-          userId_questionId: {
+      const [answeredRecord, lastAttempt] = await Promise.all([
+        this.prisma.mcqAnswered.findUnique({
+          where: {
+            userId_questionId: {
+              userId,
+              questionId: id,
+            },
+          },
+        }),
+        this.prisma.mcqAttempt.findFirst({
+          where: {
             userId,
             questionId: id,
           },
-        },
-      });
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            isCorrect: true,
+          },
+        }),
+      ]);
+      
       if (answeredRecord) {
         isAnswered = true;
         answeredAt = answeredRecord.answeredAt;
+      }
+      
+      if (lastAttempt) {
+        isCorrect = lastAttempt.isCorrect;
+        lastAttemptId = lastAttempt.id;
       }
     }
 
@@ -360,6 +421,8 @@ export class McqService {
       ...question,
       isAnswered,
       answeredAt,
+      isCorrect,
+      lastAttemptId,
       solution: question.solution || null,
       articleId: question.articleId || null,
     };
@@ -368,6 +431,16 @@ export class McqService {
   async submitAnswer(userId: string, questionId: string, selectedAnswer: number, timeSpent?: number) {
     const question = await this.prisma.mcqQuestion.findUnique({
       where: { id: questionId },
+      include: {
+        category: {
+          select: {
+            id: true,
+            name: true,
+            description: true,
+            isActive: true,
+          },
+        },
+      },
     });
 
     if (!question) {
@@ -387,26 +460,26 @@ export class McqService {
       },
     });
 
-    // Mark question as answered
-    const existingAnswered = await this.prisma.mcqAnswered.findUnique({
+    // Mark question as answered (upsert to handle race conditions)
+    await this.prisma.mcqAnswered.upsert({
       where: {
         userId_questionId: {
           userId,
           questionId,
         },
       },
+      create: {
+        userId,
+        questionId,
+      },
+      update: {
+        answeredAt: new Date(), // Update timestamp if already exists
+      },
     });
 
-    if (!existingAnswered) {
-      await this.prisma.mcqAnswered.create({
-        data: {
-          userId,
-          questionId,
-        },
-      });
-      this.logger.log(`Question ${questionId} marked as answered by user ${userId}`);
-    }
+    this.logger.log(`Question ${questionId} answered by user ${userId} - ${isCorrect ? 'CORRECT' : 'INCORRECT'}`);
 
+    // Return complete response with updated question state
     return {
       attempt,
       isCorrect,
@@ -414,6 +487,16 @@ export class McqService {
       correctAnswerIndex: question.correctAnswer, // Same as correctAnswer for consistency
       explanation: question.explanation || null,
       solution: question.solution || null,
+      // Updated question state for frontend to use immediately
+      question: {
+        id: question.id,
+        isAnswered: true,
+        answeredAt: new Date(),
+        isCorrect,
+        lastAttemptId: attempt.id,
+        solution: question.solution || null,
+        articleId: question.articleId || null,
+      },
       // Flag to prevent auto-advance - user must click next button
       shouldAutoAdvance: false,
       waitForUserAction: true,
@@ -483,7 +566,14 @@ export class McqService {
       include: {
         question: {
           include: {
-            category: true,
+            category: {
+              select: {
+                id: true,
+                name: true,
+                description: true,
+                isActive: true,
+              },
+            },
           },
         },
       },
@@ -491,11 +581,76 @@ export class McqService {
       take: limit,
     });
 
-    // Add isBookmarked flag to all questions
-    const questionsWithBookmarkFlag = bookmarks.map(bookmark => ({
-      ...bookmark.question,
-      isBookmarked: true,
-    }));
+    if (bookmarks.length === 0) {
+      return {
+        data: [],
+        count: 0,
+      };
+    }
+
+    const questionIds = bookmarks.map(b => b.question.id);
+
+    // Get answered status and attempt information
+    const [answeredRecords, attempts] = await Promise.all([
+      this.prisma.mcqAnswered.findMany({
+        where: {
+          userId,
+          questionId: { in: questionIds },
+        },
+      }),
+      this.prisma.mcqAttempt.findMany({
+        where: {
+          userId,
+          questionId: { in: questionIds },
+        },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true,
+          questionId: true,
+          isCorrect: true,
+        },
+      }),
+    ]);
+
+    // Group attempts by questionId to get the most recent one
+    const attemptsByQuestion = new Map<string, { id: string; isCorrect: boolean }>();
+    attempts.forEach(attempt => {
+      if (!attemptsByQuestion.has(attempt.questionId)) {
+        attemptsByQuestion.set(attempt.questionId, { id: attempt.id, isCorrect: attempt.isCorrect });
+      }
+    });
+
+    // Build answered status map
+    const answeredStatusMap: Record<string, { isAnswered: boolean; answeredAt: Date | null; isCorrect: boolean | null; lastAttemptId: string | null }> = {};
+    answeredRecords.forEach(record => {
+      const lastAttempt = attemptsByQuestion.get(record.questionId);
+      answeredStatusMap[record.questionId] = {
+        isAnswered: true,
+        answeredAt: record.answeredAt,
+        isCorrect: lastAttempt ? lastAttempt.isCorrect : null,
+        lastAttemptId: lastAttempt ? lastAttempt.id : null,
+      };
+    });
+
+    // Add isBookmarked flag and answered status to all questions
+    const questionsWithBookmarkFlag = bookmarks.map(bookmark => {
+      const answeredStatus = answeredStatusMap[bookmark.question.id] || {
+        isAnswered: false,
+        answeredAt: null,
+        isCorrect: null,
+        lastAttemptId: null,
+      };
+      return {
+        ...bookmark.question,
+        isBookmarked: true,
+        isAnswered: answeredStatus.isAnswered,
+        answeredAt: answeredStatus.answeredAt,
+        isCorrect: answeredStatus.isCorrect,
+        lastAttemptId: answeredStatus.lastAttemptId,
+        solution: bookmark.question.solution || null,
+        articleId: bookmark.question.articleId || null,
+      };
+    });
 
     return {
       data: questionsWithBookmarkFlag,
@@ -522,7 +677,7 @@ export class McqService {
     });
   }
 
-  async getDailyDigestLinkedMcqs(articleId?: string, categoryId?: string) {
+  async getDailyDigestLinkedMcqs(articleId?: string, categoryId?: string, userId?: string) {
     // Get MCQs linked to a specific article or category for daily digest
     const where: any = {};
     
@@ -545,7 +700,84 @@ export class McqService {
 
     // Shuffle and return 5 random questions
     const shuffled = questions.sort(() => 0.5 - Math.random());
-    return shuffled.slice(0, 5);
+    const selectedQuestions = shuffled.slice(0, 5);
+
+    // Get answered status and attempt information for user if provided
+    if (userId && selectedQuestions.length > 0) {
+      const questionIds = selectedQuestions.map(q => q.id);
+      
+      // Fetch answered records and attempts in parallel
+      const [answeredRecords, attempts] = await Promise.all([
+        this.prisma.mcqAnswered.findMany({
+          where: {
+            userId,
+            questionId: { in: questionIds },
+          },
+        }),
+        this.prisma.mcqAttempt.findMany({
+          where: {
+            userId,
+            questionId: { in: questionIds },
+          },
+          orderBy: { createdAt: 'desc' },
+          select: {
+            id: true,
+            questionId: true,
+            isCorrect: true,
+          },
+        }),
+      ]);
+
+      // Group attempts by questionId to get the most recent one
+      const attemptsByQuestion = new Map<string, { id: string; isCorrect: boolean }>();
+      attempts.forEach(attempt => {
+        if (!attemptsByQuestion.has(attempt.questionId)) {
+          attemptsByQuestion.set(attempt.questionId, { id: attempt.id, isCorrect: attempt.isCorrect });
+        }
+      });
+
+      // Build answered status map
+      const answeredStatusMap: Record<string, { isAnswered: boolean; answeredAt: Date | null; isCorrect: boolean | null; lastAttemptId: string | null }> = {};
+      answeredRecords.forEach(record => {
+        const lastAttempt = attemptsByQuestion.get(record.questionId);
+        answeredStatusMap[record.questionId] = {
+          isAnswered: true,
+          answeredAt: record.answeredAt,
+          isCorrect: lastAttempt ? lastAttempt.isCorrect : null,
+          lastAttemptId: lastAttempt ? lastAttempt.id : null,
+        };
+      });
+
+      // Enhance questions with answered status and attempt info
+      return selectedQuestions.map(question => {
+        const answeredStatus = answeredStatusMap[question.id] || {
+          isAnswered: false,
+          answeredAt: null,
+          isCorrect: null,
+          lastAttemptId: null,
+        };
+        return {
+          ...question,
+          isAnswered: answeredStatus.isAnswered,
+          answeredAt: answeredStatus.answeredAt,
+          isCorrect: answeredStatus.isCorrect,
+          lastAttemptId: answeredStatus.lastAttemptId,
+          solution: question.solution || null,
+          articleId: question.articleId || null,
+        };
+      });
+    }
+
+    // Return questions without answered status if no userId provided
+    return selectedQuestions.map(question => ({
+      ...question,
+      isAnswered: false,
+      answeredAt: null,
+      isCorrect: null,
+      lastAttemptId: null,
+      solution: question.solution || null,
+      articleId: question.articleId || null,
+    }));
   }
 
   async reportQuestion(userId: string, questionId: string, reason?: string, description?: string) {
@@ -692,6 +924,64 @@ export class McqService {
       }
       this.logger.error(`Error tracking view duration for MCQ question ${questionId}: ${error.message}`, error.stack);
       throw new BadRequestException(`Failed to track view duration: ${error.message}`);
+    }
+  }
+
+  async getReport(userId: string) {
+    try {
+      // Get all attempts for the user with question details
+      const attempts = await this.prisma.mcqAttempt.findMany({
+        where: { userId },
+        include: {
+          question: {
+            select: {
+              id: true,
+              question: true,
+              options: true,
+              correctAnswer: true,
+              difficulty: true,
+              category: {
+                select: {
+                  id: true,
+                  name: true,
+                },
+              },
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      // Calculate statistics
+      const totalAttempts = attempts.length;
+      const correctAnswers = attempts.filter((attempt) => attempt.isCorrect).length;
+      const incorrectAnswers = totalAttempts - correctAnswers;
+      const accuracy = totalAttempts > 0 ? (correctAnswers / totalAttempts) * 100 : 0;
+
+      // Get recent submissions (last 10 attempts)
+      const recentSubmissions = attempts.slice(0, 10).map((attempt) => ({
+        id: attempt.id,
+        questionId: attempt.questionId,
+        question: attempt.question.question,
+        selectedAnswer: attempt.selectedAnswer,
+        correctAnswer: attempt.question.correctAnswer,
+        isCorrect: attempt.isCorrect,
+        timeSpent: attempt.timeSpent || null,
+        difficulty: attempt.question.difficulty,
+        category: attempt.question.category,
+        submittedAt: attempt.createdAt,
+      }));
+
+      return {
+        totalAttempts,
+        correctAnswers,
+        incorrectAnswers,
+        accuracy: Math.round(accuracy * 100) / 100, // Round to 2 decimal places
+        recentSubmissions,
+      };
+    } catch (error: any) {
+      this.logger.error(`Error fetching MCQ report for user ${userId}: ${error.message}`, error.stack);
+      throw new InternalServerErrorException(`Failed to fetch MCQ report: ${error.message}`);
     }
   }
 }

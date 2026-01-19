@@ -242,5 +242,61 @@ export class CmsController {
   async getGovtVacancyById(@Param('id') id: string) {
     return this.cmsService.getGovtVacancyById(id);
   }
+
+  @Public()
+  @Get('college-events')
+  @ApiOperation({ 
+    summary: 'Get college events',
+    description: 'Supports ?include=registrations to include registration data. If user is authenticated, includes isRegistered flag.',
+  })
+  async getCollegeEvents(@Query() filters: any, @CurrentUser() user?: any) {
+    return this.cmsService.getCollegeEvents(filters, user?.id);
+  }
+
+  @Public()
+  @Get('college-events/:id')
+  @ApiOperation({ summary: 'Get college event by ID' })
+  async getCollegeEventById(@Param('id') id: string) {
+    return this.cmsService.getCollegeEventById(id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('college-events/:id/interested')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Record interest in a college event' })
+  async recordEventInterest(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() data?: { interestedAt?: string },
+  ) {
+    return this.cmsService.recordEventInterest(user.id, id, data?.interestedAt);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('college-events/:id/register')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Register for a college event' })
+  async registerForEvent(
+    @CurrentUser() user: any,
+    @Param('id') id: string,
+    @Body() data?: { interestedAt?: string },
+  ) {
+    // Register endpoint is an alias for recordEventInterest
+    return this.cmsService.recordEventInterest(user.id, id, data?.interestedAt);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('college-events/registered')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Get all college events the current user has registered for' })
+  async getRegisteredEvents(@CurrentUser() user: any, @Query() filters: any) {
+    return this.cmsService.getRegisteredCollegeEvents(user.id, filters);
+  }
+
+  @Get('demo-videos')
+  @ApiOperation({ summary: 'Get demo video URLs for all features' })
+  async getDemoVideos() {
+    return this.cmsService.getDemoVideos();
+  }
 }
 

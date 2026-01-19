@@ -28,14 +28,15 @@ export class NetworkService {
       where,
       include: {
         studentProfile: {
-          select: {
-            firstName: true,
-            lastName: true,
-            profileImage: true,
+          include: {
             college: true,
             course: true,
+            projects: true,
+            experiences: true,
           },
         },
+        companyProfile: true,
+        collegeProfile: true,
       },
       take: 50,
     });
@@ -83,12 +84,16 @@ export class NetworkService {
       },
     });
 
-    // Send notification to receiver
+    // Create notification for receiver and send push notification
     try {
       await this.notificationsService.createNotification(receiverId, {
         title: 'New Connection Request',
-        message: `${requesterName} sent you a connection request`,
-        type: NotificationType.SYSTEM,
+        message: `${requesterName} wants to connect with you`,
+        type: NotificationType.CONNECTION,
+        notificationData: {
+          requesterId: requesterId,
+          connectionId: connection.id,
+        },
       });
     } catch (error) {
       console.error('Error sending notification:', error);
@@ -141,16 +146,21 @@ export class NetworkService {
       },
     });
 
-    // Send notification to requester
-    const receiverName = connection.receiver?.studentProfile?.firstName && connection.receiver?.studentProfile?.lastName
+    // Get accepter name (receiver is the one who accepted)
+    const accepterName = connection.receiver?.studentProfile?.firstName && connection.receiver?.studentProfile?.lastName
       ? `${connection.receiver.studentProfile.firstName} ${connection.receiver.studentProfile.lastName}`
       : connection.receiver?.email?.split('@')[0] || 'Someone';
 
+    // Create notification for requester and send push notification
     try {
       await this.notificationsService.createNotification(connection.requesterId, {
         title: 'Connection Accepted',
-        message: `${receiverName} accepted your connection request`,
-        type: NotificationType.SYSTEM,
+        message: `${accepterName} accepted your connection request`,
+        type: NotificationType.CONNECTION,
+        notificationData: {
+          userId: connection.receiverId, // accepterId
+          connectionId: connection.id,
+        },
       });
     } catch (error) {
       console.error('Error sending notification:', error);
@@ -350,25 +360,15 @@ export class NetworkService {
         where,
         include: {
           studentProfile: {
-            select: {
-              firstName: true,
-              lastName: true,
-              profileImage: true,
-              technicalSkills: true,
-              softSkills: true,
-              interestHobbies: true,
-              college: {
-                select: {
-                  name: true,
-                },
-              },
-              course: {
-                select: {
-                  name: true,
-                },
-              },
+            include: {
+              college: true,
+              course: true,
+              projects: true,
+              experiences: true,
             },
           },
+          companyProfile: true,
+          collegeProfile: true,
         },
         skip,
         take: limit,

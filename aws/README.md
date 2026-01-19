@@ -15,7 +15,9 @@ Complete AWS deployment setup for the LifeSet platform including backend API, ad
 
 3. **Node.js 20.x** installed
 
-### One-Command Deployment (Backend)
+### Quick Deployment Options
+
+#### ECS Deployment (Containerized)
 
 ```bash
 cd lifeset-backend/aws/scripts
@@ -28,6 +30,22 @@ This will:
 2. Create secrets in AWS Secrets Manager
 3. Build and push Docker image to ECR
 4. Deploy ECS service
+
+#### EC2 Deployment (Traditional Server)
+
+```bash
+cd lifeset-backend/aws/scripts
+export DB_PASSWORD="your_secure_password"
+export EC2_KEY_PAIR="your-key-pair-name"
+
+# Deploy infrastructure and EC2
+./deploy-infrastructure.sh
+./create-secrets.sh
+./deploy-ec2-infrastructure.sh
+./deploy-to-ec2.sh
+```
+
+See [EC2_DEPLOYMENT_GUIDE.md](./EC2_DEPLOYMENT_GUIDE.md) for detailed instructions.
 
 ### Manual Step-by-Step Deployment
 
@@ -51,13 +69,31 @@ export DB_PASSWORD="your_secure_password"
 ./build-and-push-docker.sh
 ```
 
-#### 4. Deploy ECS Service
+#### 4. (Optional) Add SSL Certificates for HTTPS
+
+```bash
+# Set certificate file paths
+export SSL_CERT_FILE="/path/to/your/cert.pem"
+export SSL_KEY_FILE="/path/to/your/key.pem"
+
+# Add certificates to AWS Secrets Manager
+./add-ssl-certificates.sh
+```
+
+Or provide paths interactively:
+```bash
+./add-ssl-certificates.sh
+```
+
+#### 5. Deploy ECS Service
 
 ```bash
 ./deploy-ecs-service.sh
 ```
 
-#### 5. Deploy Admin Panel
+**Note**: If SSL certificates are configured, the backend will automatically use HTTPS. Otherwise, it will use HTTP.
+
+#### 6. Deploy Admin Panel
 
 ```bash
 cd ../../lifeset-admin-web/aws/scripts
@@ -75,21 +111,45 @@ CLOUDFRONT_DISTRIBUTION_ID="<YOUR_DIST_ID>" \
 ./deploy-admin-panel.sh
 ```
 
+## Deployment Options
+
+### Option 1: ECS Deployment (Containerized)
+- Scalable containerized deployment
+- Automatic load balancing
+- Best for production with high traffic
+
+See: [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md)
+
+### Option 2: EC2 Deployment (Traditional Server)
+- Full server control
+- Easier debugging with SSH
+- Simpler SSL certificate management
+- Best for simpler deployments
+
+See: [EC2_DEPLOYMENT_GUIDE.md](./EC2_DEPLOYMENT_GUIDE.md)
+
 ## File Structure
 
 ```
 aws/
 ├── infrastructure/
 │   ├── cloudformation.yaml      # Main infrastructure stack
+│   ├── ec2-cloudformation.yaml # EC2 instance template
 │   ├── ecs-task-definition.json  # ECS task definition template
 │   └── ecs-service.json         # ECS service configuration
 ├── scripts/
-│   ├── quick-deploy.sh          # One-command deployment
+│   ├── quick-deploy.sh          # One-command ECS deployment
 │   ├── deploy-infrastructure.sh # Deploy CloudFormation stack
 │   ├── create-secrets.sh        # Create AWS Secrets Manager secrets
-│   ├── build-and-push-docker.sh # Build and push Docker image
-│   └── deploy-ecs-service.sh     # Deploy ECS service
-├── DEPLOYMENT_GUIDE.md          # Detailed deployment guide
+│   ├── add-ssl-certificates.sh  # Add SSL certificates (ECS)
+│   ├── setup-ssl-ec2.sh         # Set up SSL certificates (EC2)
+│   ├── build-and-push-docker.sh # Build and push Docker image (ECS)
+│   ├── deploy-ecs-service.sh    # Deploy ECS service
+│   ├── deploy-ec2-infrastructure.sh # Deploy EC2 infrastructure
+│   ├── deploy-to-ec2.sh         # Deploy application to EC2
+│   └── prepare-task-definition.sh # Helper script for task definition
+├── DEPLOYMENT_GUIDE.md          # ECS deployment guide
+├── EC2_DEPLOYMENT_GUIDE.md      # EC2 deployment guide
 └── README.md                    # This file
 ```
 
@@ -113,9 +173,11 @@ To change, update the `REGION` variable in the scripts.
 
 After deployment, you'll get:
 
-- **Backend API**: `http://<ALB_DNS>/api/v1`
-- **API Docs**: `http://<ALB_DNS>/api/v1/docs`
-- **Health Check**: `http://<ALB_DNS>/api/v1/health`
+- **Backend API**: `http://<ALB_DNS>/api/v1` (or `https://` if SSL is configured)
+- **API Docs**: `http://<ALB_DNS>/api/v1/docs` (or `https://` if SSL is configured)
+- **Health Check**: `http://<ALB_DNS>/api/v1/health` (or `https://` if SSL is configured)
+
+**Note**: If SSL certificates are configured, the backend will use HTTPS. Make sure your ALB is also configured with an HTTPS listener if you want end-to-end encryption.
 
 ## Mobile App Configuration
 
@@ -184,13 +246,39 @@ Approximate monthly costs:
 
 *Costs vary by region and usage patterns.*
 
+## SSL/HTTPS Configuration
+
+The backend supports HTTPS when SSL certificates are provided. To enable HTTPS:
+
+1. **Obtain SSL Certificates**:
+   - Use Let's Encrypt (free) for production
+   - Or use certificates from a commercial CA
+   - Or generate self-signed certificates for testing
+
+2. **Add Certificates to AWS Secrets Manager**:
+   ```bash
+   export SSL_CERT_FILE="/path/to/cert.pem"
+   export SSL_KEY_FILE="/path/to/key.pem"
+   ./add-ssl-certificates.sh
+   ```
+
+3. **Redeploy the Service**:
+   ```bash
+   ./deploy-ecs-service.sh
+   ```
+
+The backend will automatically detect and use the SSL certificates. Certificates are stored securely in AWS Secrets Manager and written to files in the container at startup.
+
+**Important**: If you're using an ALB, you may want to configure SSL termination at the ALB level instead of (or in addition to) backend HTTPS. See the ALB configuration in `cloudformation.yaml`.
+
 ## Security Notes
 
 1. Never commit secrets to version control
 2. Use AWS Secrets Manager for all sensitive data
 3. Enable encryption at rest for RDS and ElastiCache
-4. Use HTTPS for all external traffic
+4. Use HTTPS for all external traffic (configure SSL certificates)
 5. Regularly rotate passwords and secrets
+6. Store SSL certificates securely in AWS Secrets Manager
 
 ## Support
 

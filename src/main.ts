@@ -8,13 +8,33 @@ import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import helmet from 'helmet';
 import compression from 'compression';
 import express from 'express';
+import * as fs from 'fs';
 
 async function bootstrap() {
+  // Check for SSL certificate configuration before creating the app
+  const sslCertPath = process.env.SSL_CERT_PATH;
+  const sslKeyPath = process.env.SSL_KEY_PATH;
+  let httpsOptions: { cert: Buffer; key: Buffer } | undefined;
+  
+  if (sslCertPath && sslKeyPath) {
+    try {
+      httpsOptions = {
+        cert: fs.readFileSync(sslCertPath),
+        key: fs.readFileSync(sslKeyPath),
+      };
+      console.log(`SSL certificates loaded from: ${sslCertPath} and ${sslKeyPath}`);
+    } catch (error) {
+      console.error('Failed to load SSL certificates:', error);
+      console.error('Continuing with HTTP...');
+    }
+  }
+  
   // Increase body size limit for JSON requests (default is 100kb)
   // Allow up to 50MB for articles with images (base64 encoded)
   const app = await NestFactory.create(AppModule, {
     bodyParser: false, // Disable default body parser to use custom limits
     rawBody: false,
+    ...(httpsOptions && { httpsOptions }), // Add HTTPS options if certificates are available
   });
   
   // Get the underlying Express instance and configure body parser with increased limits
@@ -142,13 +162,23 @@ async function bootstrap() {
   const port = process.env.PORT || 3000;
   const server = await app.listen(port);
   
+  // Determine protocol based on whether HTTPS options were used
+  const protocol = httpsOptions ? 'https' : 'http';
+  
+  console.log(`Application is running on: ${protocol}://localhost:${port}`);
+  console.log(`API Documentation: ${protocol}://localhost:${port}${apiPrefix}/docs`);
+  
+  if (httpsOptions) {
+    console.log(`SSL enabled with certificates from: ${sslCertPath} and ${sslKeyPath}`);
+  } else if (process.env.NODE_ENV === 'production') {
+    console.warn('WARNING: Running in production without HTTPS. Set SSL_CERT_PATH and SSL_KEY_PATH environment variables to enable HTTPS.');
+  }
+  
   // Increase server timeouts for file uploads
   server.timeout = 300000; // 5 minutes
   server.keepAliveTimeout = 65000; // 65 seconds (must be > 60s for ALB)
   server.headersTimeout = 66000; // 66 seconds (must be > keepAliveTimeout)
   
-  console.log(`Application is running on: http://localhost:${port}`);
-  console.log(`API Documentation: http://localhost:${port}${apiPrefix}/docs`);
   console.log(`Server timeouts configured: ${server.timeout}ms`);
 }
 

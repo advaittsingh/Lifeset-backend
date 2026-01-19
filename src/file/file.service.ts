@@ -41,21 +41,53 @@ export class FileService {
     }
 
     try {
-      const result = await this.s3
-      .upload({
+      const uploadParams: any = {
         Bucket: bucket,
         Key: key,
         Body: file,
         ContentType: contentType,
-          ACL: 'public-read', // Make files publicly readable
-      })
-      .promise();
+      };
 
-      this.logger.log(`File uploaded successfully to S3. Location: ${result.Location}`);
-      return result;
+      // Try with ACL first (for buckets that support it)
+      uploadParams.ACL = 'public-read';
+
+      try {
+        const result = await this.s3.upload(uploadParams).promise();
+        this.logger.log(`File uploaded successfully to S3. Location: ${result.Location}`);
+        return result;
+      } catch (aclError: any) {
+        // If ACL is not allowed, retry without ACL (bucket policy should handle public access)
+        if (aclError.code === 'AccessControlListNotSupported' || 
+            aclError.message?.includes('does not allow ACLs') ||
+            aclError.message?.includes('ACL')) {
+          this.logger.warn('Bucket does not allow ACLs, uploading without ACL (relying on bucket policy)');
+          
+          // Remove ACL and retry
+          delete uploadParams.ACL;
+          const result = await this.s3.upload(uploadParams).promise();
+          this.logger.log(`File uploaded successfully to S3 without ACL. Location: ${result.Location}`);
+          return result;
+        }
+        // If it's a different error, throw it
+        throw aclError;
+      }
     } catch (error: any) {
       this.logger.error(`S3 upload failed: ${error.message}`, error.stack);
-      throw new Error(`Failed to upload file to S3: ${error.message}`);
+      
+      // Provide more specific error messages
+      if (error.code === 'NoSuchBucket') {
+        throw new Error(`S3 bucket "${bucket}" does not exist. Please check your S3 bucket configuration.`);
+      }
+      
+      if (error.code === 'AccessDenied' || error.code === 'InvalidAccessKeyId') {
+        throw new Error(`AWS credentials are invalid or insufficient permissions. Please check your AWS configuration.`);
+      }
+      
+      if (error.code === 'RequestTimeout' || error.code === 'ETIMEDOUT') {
+        throw new Error(`Upload timeout. The file may be too large or network connection is slow. Please try again.`);
+      }
+      
+      throw new Error(`Failed to upload file to S3: ${error.message || 'Unknown error'}`);
     }
   }
 

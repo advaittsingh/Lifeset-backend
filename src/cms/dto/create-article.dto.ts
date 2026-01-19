@@ -28,7 +28,10 @@ export class CreateArticleDto {
   @IsNotEmpty()
   title: string;
 
-  @ApiProperty({ description: 'Article description' })
+  @ApiProperty({ 
+    description: 'Article description. Can contain HTML formatting. HTML tags are preserved and stored as-is.',
+    example: '<p>Brief description with <strong>bold</strong> text.</p>'
+  })
   @IsString()
   @IsNotEmpty()
   description: string;
@@ -60,7 +63,11 @@ export class CreateArticleDto {
   isPublished?: boolean;
 
   // Article-specific fields (moved from metadata)
-  @ApiProperty({ description: 'Full article content', required: false })
+  @ApiProperty({ 
+    description: 'Full article content as HTML string. HTML tags are preserved and stored as-is. Example: "<h2>Title</h2><p>Content with <strong>bold</strong> text.</p>"', 
+    required: false,
+    example: '<h2>Article Title</h2><p>This is <strong>bold</strong> and <em>italic</em> text.</p><ul><li>Item 1</li><li>Item 2</li></ul>'
+  })
   @IsString()
   @IsOptional()
   fullArticle?: string;

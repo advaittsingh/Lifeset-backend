@@ -71,6 +71,12 @@ export class McqController {
     return this.mcqService.getUserAttempts(user.id, questionId);
   }
 
+  @Get('report')
+  @ApiOperation({ summary: 'Get MCQ report with statistics and recent submissions' })
+  async getReport(@CurrentUser() user: any) {
+    return this.mcqService.getReport(user.id);
+  }
+
   @Get('daily-digest-linked')
   @ApiOperation({ summary: 'Get linked MCQs based on current affairs or general knowledge articles' })
   async getDailyDigestLinkedMcqs(
@@ -78,7 +84,7 @@ export class McqController {
     @Query('articleId') articleId?: string,
     @Query('categoryId') categoryId?: string,
   ) {
-    return this.mcqService.getDailyDigestLinkedMcqs(articleId, categoryId);
+    return this.mcqService.getDailyDigestLinkedMcqs(articleId, categoryId, user?.id);
   }
 
   @Post('questions/:id/report')

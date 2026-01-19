@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Patch, Delete, Body, Param, Query, UseGuards, UseInterceptors, UploadedFile, BadRequestException, NotFoundException, InternalServerErrorException, HttpException } from '@nestjs/common';
+import { Controller, Get, Post, Put, Patch, Delete, Body, Param, Query, UseGuards, UseInterceptors, UploadedFile, BadRequestException, NotFoundException, InternalServerErrorException, HttpException, Logger } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Express } from 'express';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiConsumes } from '@nestjs/swagger';
@@ -12,7 +12,11 @@ import { CmsAdminService } from '../cms/cms-admin.service';
 import { CreateWallCategoryDto } from '../cms/dto/create-wall-category.dto';
 import { UpdateWallCategoryDto } from '../cms/dto/update-wall-category.dto';
 import { FileService } from '../file/file.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { CreateNotificationAdminDto } from './dto/create-notification-admin.dto';
+import { CreateSponsorAdDto } from './dto/create-sponsor-ad.dto';
+import { UpdateSponsorAdDto } from './dto/update-sponsor-ad.dto';
+import { mapNotificationTypeToDataType } from '../notifications/utils/notification-type-mapper';
 
 @ApiTags('Admin')
 @Controller('admin')
@@ -20,10 +24,13 @@ import { CreateNotificationAdminDto } from './dto/create-notification-admin.dto'
 @ApiBearerAuth()
 @Roles(UserType.ADMIN)
 export class AdminController {
+  private readonly logger = new Logger(AdminController.name);
+
   constructor(
     private prisma: PrismaService,
     private readonly cmsAdminService: CmsAdminService,
     private readonly fileService: FileService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   // Users Management
@@ -196,13 +203,50 @@ export class AdminController {
       where.isActive = filters.isActive === 'true';
     }
 
+    // Filter by jobType in metadata (for internships and freelancer opportunities)
+    if (filters.jobType) {
+      // Normalize jobType values
+      const jobTypeValue = filters.jobType.toLowerCase();
+      
+      // Map jobType to postType for efficient filtering
+      if (jobTypeValue === 'internship' || jobTypeValue === 'intern') {
+        // Internships have postType = INTERNSHIP
+        where.postType = 'INTERNSHIP';
+      } else if (jobTypeValue === 'freelance' || jobTypeValue === 'freelancing' || jobTypeValue === 'contract' || jobTypeValue === 'contracting') {
+        // Freelance/contract jobs have postType = FREELANCING
+        where.postType = 'FREELANCING';
+      }
+      // Note: If postType is explicitly set and conflicts with jobType, postType takes precedence
+      // The frontend should send both postType=JOB and jobType=INTERNSHIP to filter jobs by metadata.jobType
+      
+      // For cases where postType=JOB but we want to filter by metadata.jobType,
+      // we'll need to filter in memory (less efficient but necessary for edge cases)
+      // This is handled below after fetching
+    }
+
     const limit = filters.limit ? parseInt(filters.limit.toString()) : 100;
     const page = filters.page ? parseInt(filters.page.toString()) : 1;
     const skip = (page - 1) * limit;
 
-    const [posts, total] = await Promise.all([
+    // Handle special case: postType=JOB with jobType filter (need to check metadata)
+    let needsMetadataFilter = false;
+    let jobTypeFilterValue: string | null = null;
+    
+    if (filters.jobType && filters.postType === 'JOB') {
+      needsMetadataFilter = true;
+      const jobTypeValue = filters.jobType.toLowerCase();
+      if (jobTypeValue === 'internship' || jobTypeValue === 'intern') {
+        jobTypeFilterValue = 'internship';
+      } else if (jobTypeValue === 'freelance' || jobTypeValue === 'freelancing') {
+        jobTypeFilterValue = 'freelance';
+      } else if (jobTypeValue === 'contract' || jobTypeValue === 'contracting') {
+        jobTypeFilterValue = 'contract';
+      }
+    }
+
+    const [allPosts, totalBeforeFilter] = await Promise.all([
       this.prisma.post.findMany({
-        where,
+        where: needsMetadataFilter ? { ...where, postType: 'JOB' } : where,
         include: {
           user: {
             select: {
@@ -219,12 +263,30 @@ export class AdminController {
             },
           },
         },
-        skip,
-        take: limit,
+        // Fetch more if we need to filter by metadata (will filter and paginate after)
+        take: needsMetadataFilter ? 1000 : limit,
+        skip: needsMetadataFilter ? 0 : skip,
         orderBy: { createdAt: 'desc' },
       }),
-      this.prisma.post.count({ where }),
+      this.prisma.post.count({ where: needsMetadataFilter ? { ...where, postType: 'JOB' } : where }),
     ]);
+
+    // Filter by metadata.jobType if needed (for postType=JOB with jobType filter)
+    let posts = allPosts;
+    let total = totalBeforeFilter;
+    
+    if (needsMetadataFilter && jobTypeFilterValue) {
+      posts = allPosts.filter((post: any) => {
+        const metadata = post.metadata as any || {};
+        const metadataJobType = (metadata.jobType || metadata.job_type || metadata.type || '').toLowerCase();
+        return metadataJobType === jobTypeFilterValue;
+      });
+      
+      total = posts.length;
+      
+      // Apply pagination after filtering
+      posts = posts.slice(skip, skip + limit);
+    }
 
     return {
       data: posts,
@@ -240,10 +302,66 @@ export class AdminController {
   @Patch('posts/:id')
   @ApiOperation({ summary: 'Update post' })
   async updatePost(@Param('id') id: string, @Body() data: any) {
-    return this.prisma.post.update({
-      where: { id },
-      data,
-    });
+    try {
+      // Get existing post to preserve metadata and check postType
+      const existingPost = await this.prisma.post.findUnique({
+        where: { id },
+        select: { metadata: true, postType: true },
+      });
+
+      if (!existingPost) {
+        throw new NotFoundException('Post not found');
+      }
+
+      const existingMetadata = (existingPost?.metadata as any) || {};
+      
+      // Extract jobType from top level if provided
+      const { jobType, ...restData } = data;
+      
+      // Auto-set jobType based on postType if not explicitly provided
+      let finalJobType = jobType;
+      if (!finalJobType && existingPost.postType === 'INTERNSHIP') {
+        finalJobType = 'internship';
+      } else if (!finalJobType && existingPost.postType === 'FREELANCING') {
+        finalJobType = 'freelance'; // Default for freelancing
+      }
+      
+      // Build update data
+      const updateData: any = { ...restData };
+      
+      // If jobType is provided at top level or auto-set, store it in metadata
+      if (finalJobType !== undefined) {
+        updateData.metadata = {
+          ...existingMetadata,
+          jobType: finalJobType,
+        };
+      } else if (Object.keys(restData).some(key => key !== 'metadata')) {
+        // If other fields are being updated but metadata is not explicitly provided,
+        // preserve existing metadata
+        updateData.metadata = existingMetadata;
+      }
+      
+      // If metadata is explicitly provided in the request, merge it with existing
+      if (data.metadata !== undefined) {
+        updateData.metadata = {
+          ...existingMetadata,
+          ...(data.metadata || {}),
+          // If jobType was at top level or auto-set, it takes precedence
+          ...(finalJobType !== undefined && { jobType: finalJobType }),
+        };
+      }
+
+      return this.prisma.post.update({
+        where: { id },
+        data: updateData,
+      });
+    } catch (error: any) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      this.logger.error('Error updating post:', error);
+      throw new InternalServerErrorException('Failed to update post');
+    }
   }
 
   @Delete('posts/:id')
@@ -506,6 +624,7 @@ export class AdminController {
   @ApiOperation({ summary: 'Send notification (Admin)' })
   async sendNotification(@Body() data: CreateNotificationAdminDto) {
     const where: any = {};
+    let userIds: string[] = [];
 
     if (data.sendToAll) {
       // Apply filters if provided
@@ -560,6 +679,11 @@ export class AdminController {
         },
       });
 
+      userIds = users.map(user => user.id);
+
+      // Map notification type to data.type for mobile app filtering
+      const dataType = mapNotificationTypeToDataType(data.type);
+
       const notifications = users.map(user => ({
         userId: user.id,
         title: data.title,
@@ -567,11 +691,57 @@ export class AdminController {
         type: data.type as NotificationType,
       }));
       
-      return this.prisma.notification.createMany({
+      // Create notification records in database
+      await this.prisma.notification.createMany({
         data: notifications,
       });
+
+      // Check how many users have Expo tokens before sending
+      const usersWithTokens = await this.prisma.user.findMany({
+        where: {
+          id: { in: userIds },
+          expoPushToken: { not: null },
+        },
+        select: { id: true, expoPushToken: true },
+      });
+
+      this.logger.log(`📊 Notification Stats: ${users.length} total users, ${usersWithTokens.length} users with Expo tokens`);
+      
+      if (usersWithTokens.length === 0) {
+        this.logger.warn(`⚠️  No users with Expo push tokens found. Users need to have expoPushToken saved.`);
+      }
+
+      // Send push notifications via Expo Push API
+      this.logger.log(`🚀 Sending push notifications to ${userIds.length} users...`);
+      this.logger.log(`📋 Notification details - Title: ${data.title}, Image: ${data.image ? 'Present' : 'Missing'}, RedirectURL: ${data.redirectUrl ? 'Present' : 'Missing'}`);
+      const pushResult = await this.notificationsService.sendNotification({
+        userIds: userIds.length > 0 ? userIds : undefined, // Send to all if empty
+        notification: {
+          title: data.title,
+          body: data.message,
+        },
+        data: {
+          type: dataType, // Map to data.type format (e.g., "current-affair", "mcq", "admin")
+          notificationType: data.type, // Also include original notification type
+        },
+        redirectUrl: data.redirectUrl, // Pass redirectUrl to push notification
+        imageUrl: data.image, // Pass image to push notification (DTO uses 'image' field)
+      });
+
+      this.logger.log(`✅ Push notification result: ${JSON.stringify(pushResult)}`);
+
+      return {
+        success: true,
+        notificationsCreated: notifications.length,
+        usersWithTokens: usersWithTokens.length,
+        pushNotification: pushResult,
+      };
     } else if (data.userId) {
-      return this.prisma.notification.create({
+      // Map notification type to data.type for mobile app filtering
+      const dataType = mapNotificationTypeToDataType(data.type);
+
+      // Create notification record in database
+      const notification = await this.prisma.notification.create({
         data: {
           userId: data.userId,
           title: data.title,
@@ -579,7 +749,80 @@ export class AdminController {
           type: data.type as NotificationType,
         },
       });
+
+      // Check if user has Expo token
+      const user = await this.prisma.user.findUnique({
+        where: { id: data.userId },
+        select: { id: true, expoPushToken: true },
+      });
+
+      this.logger.log(`📊 Sending to user ${data.userId}, has Expo token: ${!!user?.expoPushToken}`);
+
+      // Send push notification via Expo Push API
+      this.logger.log(`🚀 Sending push notification to user ${data.userId}...`);
+      const pushResult = await this.notificationsService.sendNotification({
+        userIds: [data.userId],
+        notification: {
+          title: data.title,
+          body: data.message,
+        },
+        data: {
+          type: dataType, // Map to data.type format (e.g., "current-affair", "mcq", "admin")
+          notificationType: data.type, // Also include original notification type
+        },
+        redirectUrl: data.redirectUrl, // Pass redirectUrl to push notification
+        imageUrl: data.image, // Pass image to push notification (DTO uses 'image' field)
+      });
+
+      this.logger.log(`✅ Push notification result: ${JSON.stringify(pushResult)}`);
+
+      return {
+        success: true,
+        notification,
+        userHasToken: !!user?.expoPushToken,
+        pushNotification: pushResult,
+      };
     }
+
+    return { success: false, message: 'Either sendToAll or userId must be provided' };
+  }
+
+  @Get('notifications/debug')
+  @ApiOperation({ summary: 'Debug push notification tokens (Admin)' })
+  async debugNotifications(@Query('userId') userId?: string) {
+    const where: any = {};
+    if (userId) {
+      where.id = userId;
+    }
+
+    const users = await this.prisma.user.findMany({
+      where,
+      select: {
+        id: true,
+        email: true,
+        mobile: true,
+        expoPushToken: true,
+        isActive: true,
+      },
+      take: 50,
+    });
+
+    const usersWithTokens = users.filter(u => u.expoPushToken);
+    const usersWithoutTokens = users.filter(u => !u.expoPushToken);
+
+    return {
+      total: users.length,
+      withTokens: usersWithTokens.length,
+      withoutTokens: usersWithoutTokens.length,
+      users: users.map(u => ({
+        id: u.id,
+        email: u.email,
+        mobile: u.mobile,
+        hasToken: !!u.expoPushToken,
+        tokenPreview: u.expoPushToken ? u.expoPushToken.substring(0, 40) + '...' : null,
+        isActive: u.isActive,
+      })),
+    };
   }
 
   @Post('notifications/upload-image')
@@ -1126,6 +1369,187 @@ export class AdminController {
   @ApiOperation({ summary: 'Delete wall category (Admin)' })
   async deleteWallCategory(@Param('id') id: string) {
     return this.cmsAdminService.deleteWallCategory(id);
+  }
+
+  // ========== Sponsor Ads Management ==========
+  @Get('sponsor-ads')
+  @ApiOperation({ summary: 'Get all sponsor ads (Admin)' })
+  async getSponsorAds(@Query() filters: any) {
+    try {
+      const where: any = {};
+      
+      if (filters.status) {
+        where.status = filters.status;
+      }
+
+      const limit = filters.limit ? parseInt(filters.limit.toString()) : 100;
+      const page = filters.page ? parseInt(filters.page.toString()) : 1;
+      const skip = (page - 1) * limit;
+
+      const [ads, total] = await Promise.all([
+        this.prisma.sponsorAd.findMany({
+          where,
+          skip,
+          take: limit,
+          orderBy: { createdAt: 'desc' },
+        }),
+        this.prisma.sponsorAd.count({ where }),
+      ]);
+
+      return {
+        data: ads,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages: Math.ceil(total / limit),
+        },
+      };
+    } catch (error: any) {
+      this.logger.error('Error fetching sponsor ads:', error);
+      throw new InternalServerErrorException('Failed to fetch sponsor ads');
+    }
+  }
+
+  @Get('sponsor-ads/:id')
+  @ApiOperation({ summary: 'Get sponsor ad by ID (Admin)' })
+  async getSponsorAdById(@Param('id') id: string) {
+    try {
+      const ad = await this.prisma.sponsorAd.findUnique({
+        where: { id },
+      });
+
+      if (!ad) {
+        throw new NotFoundException('Sponsor ad not found');
+      }
+
+      return ad;
+    } catch (error: any) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      this.logger.error('Error fetching sponsor ad:', error);
+      throw new InternalServerErrorException('Failed to fetch sponsor ad');
+    }
+  }
+
+  @Post('sponsor-ads')
+  @ApiOperation({ summary: 'Create sponsor ad (Admin)' })
+  async createSponsorAd(@Body() createDto: CreateSponsorAdDto) {
+    try {
+      const ad = await this.prisma.sponsorAd.create({
+        data: {
+          sponsorBacklink: createDto.sponsorBacklink,
+          sponsorAdImage: createDto.sponsorAdImage,
+          status: createDto.status || 'inactive',
+        },
+      });
+
+      return ad;
+    } catch (error: any) {
+      this.logger.error('Error creating sponsor ad:', error);
+      throw new InternalServerErrorException('Failed to create sponsor ad');
+    }
+  }
+
+  @Put('sponsor-ads/:id')
+  @ApiOperation({ summary: 'Update sponsor ad (Admin)' })
+  async updateSponsorAd(
+    @Param('id') id: string,
+    @Body() updateDto: UpdateSponsorAdDto,
+  ) {
+    try {
+      // Check if ad exists
+      const existing = await this.prisma.sponsorAd.findUnique({
+        where: { id },
+      });
+
+      if (!existing) {
+        throw new NotFoundException('Sponsor ad not found');
+      }
+
+      const updateData: any = {};
+      if (updateDto.sponsorBacklink !== undefined) {
+        updateData.sponsorBacklink = updateDto.sponsorBacklink;
+      }
+      if (updateDto.sponsorAdImage !== undefined) {
+        updateData.sponsorAdImage = updateDto.sponsorAdImage;
+      }
+      if (updateDto.status !== undefined) {
+        updateData.status = updateDto.status;
+      }
+
+      const ad = await this.prisma.sponsorAd.update({
+        where: { id },
+        data: updateData,
+      });
+
+      return ad;
+    } catch (error: any) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      this.logger.error('Error updating sponsor ad:', error);
+      throw new InternalServerErrorException('Failed to update sponsor ad');
+    }
+  }
+
+  @Delete('sponsor-ads/:id')
+  @ApiOperation({ summary: 'Delete sponsor ad (Admin)' })
+  async deleteSponsorAd(@Param('id') id: string) {
+    try {
+      // Check if ad exists
+      const existing = await this.prisma.sponsorAd.findUnique({
+        where: { id },
+      });
+
+      if (!existing) {
+        throw new NotFoundException('Sponsor ad not found');
+      }
+
+      await this.prisma.sponsorAd.delete({
+        where: { id },
+      });
+
+      return { message: 'Sponsor ad deleted successfully' };
+    } catch (error: any) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      this.logger.error('Error deleting sponsor ad:', error);
+      throw new InternalServerErrorException('Failed to delete sponsor ad');
+    }
+  }
+
+  @Patch('sponsor-ads/:id')
+  @ApiOperation({ summary: 'Toggle sponsor ad status (Admin)' })
+  async toggleSponsorAdStatus(@Param('id') id: string) {
+    try {
+      // Check if ad exists
+      const existing = await this.prisma.sponsorAd.findUnique({
+        where: { id },
+      });
+
+      if (!existing) {
+        throw new NotFoundException('Sponsor ad not found');
+      }
+
+      // Toggle status
+      const newStatus = existing.status === 'active' ? 'inactive' : 'active';
+
+      const ad = await this.prisma.sponsorAd.update({
+        where: { id },
+        data: { status: newStatus },
+      });
+
+      return ad;
+    } catch (error: any) {
+      if (error instanceof NotFoundException) {
+        throw error;
+      }
+      this.logger.error('Error toggling sponsor ad status:', error);
+      throw new InternalServerErrorException('Failed to toggle sponsor ad status');
+    }
   }
 }
 
