@@ -46,6 +46,15 @@ Parameters:
     Type: Number
     Default: 1024
     Description: Memory for ECS task in MB
+  
+  SSLCertificateArn:
+    Type: String
+    Default: ""
+    Description: ACM Certificate ARN for HTTPS listener (leave empty to skip HTTPS)
+    AllowedPattern: "^$|^arn:aws:acm:.*:certificate/.*$"
+
+Conditions:
+  HasSSLCertificate: !Not [!Equals [!Ref SSLCertificateArn, ""]]
 
 Resources:
   # VPC and Networking
@@ -345,6 +354,21 @@ Resources:
       LoadBalancerArn: !Ref ApplicationLoadBalancer
       Port: 80
       Protocol: HTTP
+
+  # HTTPS Listener (optional - only created if certificate ARN is provided)
+  ALBHTTPSListener:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Condition: HasSSLCertificate
+    Properties:
+      DefaultActions:
+        - Type: forward
+          TargetGroupArn: !Ref ALBTargetGroup
+      LoadBalancerArn: !Ref ApplicationLoadBalancer
+      Port: 443
+      Protocol: HTTPS
+      Certificates:
+        - CertificateArn: !Ref SSLCertificateArn
+      SslPolicy: ELBSecurityPolicy-TLS-1-2-2017-01
 
   ALBTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup

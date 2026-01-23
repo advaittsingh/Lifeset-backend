@@ -21,9 +21,40 @@ export class NotificationJobService {
     scheduledAt: Date;
     language: 'ALL' | 'ENGLISH' | 'HINDI';
     frequency: 'ONCE' | 'HOURLY' | 'DAILY' | 'WEEKLY' | 'MONTHLY';
+    userIds?: string[];
+    phoneNumbers?: string[];
     filterConditions?: any;
     createdBy: string;
   }) {
+    // Validate that at least one targeting method is selected
+    // Note: userIds can be null (broadcast to all), array (specific users), or undefined (not set)
+    const hasUserIds = data.userIds !== undefined; // null or array both count as "set"
+    const hasPhoneNumbers = data.phoneNumbers && data.phoneNumbers.length > 0;
+    const hasFilterConditions = data.filterConditions && 
+      Object.keys(data.filterConditions).length > 0 &&
+      !(data.filterConditions.userIds && data.filterConditions.userIds.length === 0) &&
+      !(data.filterConditions.phoneNumbers && data.filterConditions.phoneNumbers.length === 0);
+
+    if (!hasUserIds && !hasPhoneNumbers && !hasFilterConditions) {
+      throw new BadRequestException(
+        'Please select at least one targeting method: specific users, phone numbers, or filter conditions'
+      );
+    }
+
+    // Merge userIds and phoneNumbers into filterConditions for storage
+    // Store null explicitly for "broadcast to all" scenario
+    const filterConditions: any = {
+      ...(data.filterConditions || {}),
+    };
+    
+    // Store userIds: null for broadcast, array for specific users, or omit if undefined
+    if (data.userIds !== undefined) {
+      filterConditions.userIds = data.userIds; // Can be null or string[]
+    }
+    
+    if (data.phoneNumbers && data.phoneNumbers.length > 0) {
+      filterConditions.phoneNumbers = data.phoneNumbers;
+    }
     // Calculate nextSendAt based on frequency
     let nextSendAt = new Date(data.scheduledAt);
     
@@ -51,7 +82,7 @@ export class NotificationJobService {
         scheduledAt: data.scheduledAt,
         language: data.language,
         frequency: data.frequency,
-        filterConditions: data.filterConditions || {},
+        filterConditions: filterConditions,
         createdBy: data.createdBy,
         nextSendAt: data.frequency === 'ONCE' ? null : nextSendAt,
         status: 'PENDING',
@@ -95,8 +126,19 @@ export class NotificationJobService {
       this.prisma.notificationJob.count({ where }),
     ]);
 
+    // Extract userIds and phoneNumbers from filterConditions for easier frontend access
+    const jobsWithExtractedFields = jobs.map(job => {
+      const filters = (job.filterConditions as any) || {};
+      return {
+        ...job,
+        // Preserve null explicitly (null = broadcast to all), otherwise return array or undefined
+        userIds: filters.userIds !== undefined ? filters.userIds : undefined,
+        phoneNumbers: filters.phoneNumbers || [],
+      };
+    });
+
     return {
-      data: jobs,
+      data: jobsWithExtractedFields,
       pagination: {
         page,
         limit,
@@ -120,7 +162,14 @@ export class NotificationJobService {
       throw new NotFoundException('Notification job not found');
     }
 
-    return job;
+    // Extract userIds and phoneNumbers from filterConditions for easier frontend access
+    const filters = (job.filterConditions as any) || {};
+    return {
+      ...job,
+      // Preserve null explicitly (null = broadcast to all), otherwise return array or undefined
+      userIds: filters.userIds !== undefined ? filters.userIds : undefined,
+      phoneNumbers: filters.phoneNumbers || [],
+    };
   }
 
   async updateJob(id: string, data: Partial<{
@@ -132,9 +181,62 @@ export class NotificationJobService {
     scheduledAt: Date;
     language: 'ALL' | 'ENGLISH' | 'HINDI';
     frequency: 'ONCE' | 'HOURLY' | 'DAILY' | 'WEEKLY' | 'MONTHLY';
+    userIds?: string[];
+    phoneNumbers?: string[];
     filterConditions: any;
     status: string;
   }>) {
+    // If userIds or phoneNumbers are provided, merge them into filterConditions
+    if (data.userIds !== undefined || data.phoneNumbers !== undefined) {
+      const existingJob = await this.getJobById(id);
+      const existingFilters = (existingJob.filterConditions as any) || {};
+      
+      const updatedFilters: any = {
+        ...existingFilters,
+        ...(data.filterConditions || {}),
+      };
+
+      // Update userIds if provided
+      if (data.userIds !== undefined) {
+        if (data.userIds.length > 0) {
+          updatedFilters.userIds = data.userIds;
+        } else {
+          delete updatedFilters.userIds;
+        }
+      }
+
+      // Update phoneNumbers if provided
+      if (data.phoneNumbers !== undefined) {
+        if (data.phoneNumbers.length > 0) {
+          updatedFilters.phoneNumbers = data.phoneNumbers;
+        } else {
+          delete updatedFilters.phoneNumbers;
+        }
+      }
+
+      // Validate that at least one targeting method is selected
+      // Note: userIds can be null (broadcast to all), array (specific users), or undefined (not set)
+      const hasUserIds = updatedFilters.userIds !== undefined; // null or array both count as "set"
+      const hasPhoneNumbers = updatedFilters.phoneNumbers && Array.isArray(updatedFilters.phoneNumbers) && updatedFilters.phoneNumbers.length > 0;
+      const hasOtherFilters = Object.keys(updatedFilters).some(key => {
+        if (key === 'userIds' || key === 'phoneNumbers') return false;
+        const value = updatedFilters[key];
+        return value !== null && value !== undefined && value !== '' && 
+               !(Array.isArray(value) && value.length === 0) &&
+               !(typeof value === 'object' && Object.keys(value).length === 0);
+      });
+
+      if (!hasUserIds && !hasPhoneNumbers && !hasOtherFilters) {
+        throw new BadRequestException(
+          'Please select at least one targeting method: specific users, phone numbers, or filter conditions'
+        );
+      }
+
+      data.filterConditions = updatedFilters;
+      // Remove userIds and phoneNumbers from data as they're now in filterConditions
+      delete (data as any).userIds;
+      delete (data as any).phoneNumbers;
+    }
     try {
       const existingJob = await this.getJobById(id);
 
@@ -255,96 +357,234 @@ export class NotificationJobService {
       return { success: false, reason: 'Job already completed' };
     }
 
-    // Build user filter conditions
-    const where: any = {
-      isActive: true,
+    // Extract targeting information from filterConditions
+    const filters = (job.filterConditions as any) || {};
+    const targetUserIds = filters.userIds; // Can be null, array, or undefined
+    const targetPhoneNumbers = filters.phoneNumbers || [];
+
+    // Map messageType to data.type for mobile app filtering
+    const dataType = mapNotificationTypeToDataType(job.messageType);
+
+    // Prepare notification payload (matching immediate notification format)
+    const notificationPayload = {
+      title: job.title,
+      body: job.content, // content → body
+      data: {
+        type: dataType,
+        notificationType: job.messageType,
+        jobId: job.id,
+      },
+      redirectUrl: job.redirectionLink, // redirectionLink → redirectUrl
+      imageUrl: job.image, // image → imageUrl
     };
 
-    // Apply language filter
-    if (job.language !== 'ALL') {
-      where.studentProfile = {
-        preferredLanguage: job.language === 'ENGLISH' ? 'english' : 'hindi',
-      };
-    }
-
-    // Apply additional filter conditions from filterConditions JSON
-    if (job.filterConditions && typeof job.filterConditions === 'object') {
-      const filters = job.filterConditions as any;
-      
-      if (filters.collegeId) {
-        where.studentProfile = {
-          ...where.studentProfile,
-          collegeId: filters.collegeId,
-        };
-      }
-      
-      if (filters.courseId) {
-        where.studentProfile = {
-          ...where.studentProfile,
-          courseId: filters.courseId,
-        };
-      }
-      
-      if (filters.stage) {
-        where.studentProfile = {
-          ...where.studentProfile,
-          stage: filters.stage,
-        };
-      }
-    }
-
-    // Get users matching filters
-    const users = await this.prisma.user.findMany({
-      where,
-      select: {
-        id: true,
-        studentProfile: {
-          select: {
-            preferredLanguage: true,
-          },
-        },
-      },
-    });
-
-    this.logger.log(`📤 Executing job ${jobId} for ${users.length} users`);
-
+    let result: any;
     let successCount = 0;
     let failCount = 0;
 
-    // Send notifications to all matching users
-    for (const user of users) {
-      try {
-        // Check language filter if specified
+    // Determine targeting strategy (same logic as immediate notifications)
+    if (targetUserIds !== undefined) {
+      // userIds is explicitly set (null = broadcast, array = specific users)
+      if (targetUserIds === null || (Array.isArray(targetUserIds) && targetUserIds.length === 0)) {
+        // Broadcast to all users
+        this.logger.log(`📤 Executing job ${jobId}: Broadcasting to all users (userIds: null)`);
+        
+        // Get all users for notification records (apply language filter if needed)
+        const where: any = { isActive: true };
         if (job.language !== 'ALL') {
-          const userLang = user.studentProfile?.preferredLanguage?.toUpperCase() || 'ENGLISH';
-          const jobLang = job.language;
-          if (jobLang !== 'ALL' && userLang !== jobLang) {
-            continue; // Skip user if language doesn't match
-          }
+          where.studentProfile = {
+            preferredLanguage: job.language === 'ENGLISH' ? 'english' : 'hindi',
+          };
         }
-
-        // Map messageType to data.type for mobile app filtering
-        const dataType = mapNotificationTypeToDataType(job.messageType);
-
-        await this.notificationsService.createNotification(user.id, {
-          title: job.title,
-          message: job.content,
-          type: job.messageType as any,
-          jobId: job.id, // Link notification to job
-          notificationData: {
-            type: dataType, // Set data.type for mobile app filtering
-            notificationType: job.messageType, // Also include original type
-            jobId: job.id,
-            ...(job.redirectionLink && { redirectUrl: job.redirectionLink }),
-            ...(job.image && { image: job.image }),
-          },
+        
+        const users = await this.prisma.user.findMany({
+          where,
+          select: { id: true },
         });
 
-        successCount++;
-      } catch (error: any) {
-        this.logger.error(`❌ Failed to send notification to user ${user.id}: ${error.message}`);
-        failCount++;
+        // Create notification records
+        await this.prisma.notification.createMany({
+          data: users.map(user => ({
+            userId: user.id,
+            title: job.title,
+            message: job.content,
+            type: job.messageType as any,
+            jobId: job.id,
+          })),
+        });
+
+        // Send push notifications (broadcast)
+        result = await this.notificationsService.sendNotification({
+          userIds: null, // Explicitly null for broadcast
+          notification: {
+            title: job.title,
+            body: job.content,
+          },
+          data: notificationPayload.data,
+          redirectUrl: notificationPayload.redirectUrl,
+          imageUrl: notificationPayload.imageUrl,
+        });
+
+        successCount = users.length;
+      } else if (Array.isArray(targetUserIds) && targetUserIds.length > 0) {
+        // Send to specific users
+        this.logger.log(`📤 Executing job ${jobId}: Targeting ${targetUserIds.length} specific users`);
+        
+        // Get users for notification records
+        const users = await this.prisma.user.findMany({
+          where: {
+            id: { in: targetUserIds },
+            isActive: true,
+          },
+          select: { id: true },
+        });
+
+        // Create notification records
+        await this.prisma.notification.createMany({
+          data: users.map(user => ({
+            userId: user.id,
+            title: job.title,
+            message: job.content,
+            type: job.messageType as any,
+            jobId: job.id,
+          })),
+        });
+
+        // Send push notifications to specific users
+        result = await this.notificationsService.sendNotification({
+          userIds: targetUserIds,
+          notification: {
+            title: job.title,
+            body: job.content,
+          },
+          data: notificationPayload.data,
+          redirectUrl: notificationPayload.redirectUrl,
+          imageUrl: notificationPayload.imageUrl,
+        });
+
+        successCount = users.length;
       }
+    } else if (targetPhoneNumbers && targetPhoneNumbers.length > 0) {
+      // Find users by phone numbers
+      this.logger.log(`📤 Executing job ${jobId}: Targeting ${targetPhoneNumbers.length} users by phone number`);
+      
+      const users = await this.prisma.user.findMany({
+        where: {
+          mobile: { in: targetPhoneNumbers },
+          isActive: true,
+        },
+        select: { id: true },
+      });
+
+      if (users.length > 0) {
+        const userIds = users.map(u => u.id);
+        
+        // Create notification records
+        await this.prisma.notification.createMany({
+          data: users.map(user => ({
+            userId: user.id,
+            title: job.title,
+            message: job.content,
+            type: job.messageType as any,
+            jobId: job.id,
+          })),
+        });
+
+        // Send push notifications
+        result = await this.notificationsService.sendNotification({
+          userIds: userIds,
+          notification: {
+            title: job.title,
+            body: job.content,
+          },
+          data: notificationPayload.data,
+          redirectUrl: notificationPayload.redirectUrl,
+          imageUrl: notificationPayload.imageUrl,
+        });
+
+        successCount = users.length;
+      }
+    } else {
+      // Use filter conditions (college, course, stage, etc.)
+      this.logger.log(`📤 Executing job ${jobId}: Using filter conditions`);
+      
+      // Build user filter conditions
+      const where: any = {
+        isActive: true,
+      };
+
+      // Apply language filter
+      if (job.language !== 'ALL') {
+        where.studentProfile = {
+          preferredLanguage: job.language === 'ENGLISH' ? 'english' : 'hindi',
+        };
+      }
+
+      // Apply additional filter conditions from filterConditions JSON
+      if (job.filterConditions && typeof job.filterConditions === 'object') {
+        if (filters.collegeId) {
+          where.studentProfile = {
+            ...where.studentProfile,
+            collegeId: filters.collegeId,
+          };
+        }
+        
+        if (filters.courseId) {
+          where.studentProfile = {
+            ...where.studentProfile,
+            courseId: filters.courseId,
+          };
+        }
+        
+        if (filters.stage) {
+          where.studentProfile = {
+            ...where.studentProfile,
+            stage: filters.stage,
+          };
+        }
+      }
+
+      // Get users matching filters
+      const users = await this.prisma.user.findMany({
+        where,
+        select: { id: true },
+      });
+
+      if (users.length > 0) {
+        const userIds = users.map(u => u.id);
+        
+        // Create notification records
+        await this.prisma.notification.createMany({
+          data: users.map(user => ({
+            userId: user.id,
+            title: job.title,
+            message: job.content,
+            type: job.messageType as any,
+            jobId: job.id,
+          })),
+        });
+
+        // Send push notifications
+        result = await this.notificationsService.sendNotification({
+          userIds: userIds,
+          notification: {
+            title: job.title,
+            body: job.content,
+          },
+          data: notificationPayload.data,
+          redirectUrl: notificationPayload.redirectUrl,
+          imageUrl: notificationPayload.imageUrl,
+        });
+
+        successCount = users.length;
+      } else {
+        this.logger.warn(`⚠️ No users found matching filter conditions for job ${jobId}`);
+      }
+    }
+
+    // Log push notification result if available
+    if (result) {
+      this.logger.log(`📊 Push notification result: ${JSON.stringify(result)}`);
     }
 
     // Update job status
@@ -383,7 +623,7 @@ export class NotificationJobService {
       success: true,
       sent: successCount,
       failed: failCount,
-      total: users.length,
+      total: successCount, // Total notifications sent (notification records created)
     };
   }
 

@@ -28,6 +28,8 @@ export class NotificationJobController {
       scheduledAt: string; // ISO date string
       language: 'ALL' | 'ENGLISH' | 'HINDI';
       frequency: 'ONCE' | 'HOURLY' | 'DAILY' | 'WEEKLY' | 'MONTHLY';
+      userIds?: string[] | null;
+      phoneNumbers?: string[];
       filterConditions?: any;
     },
   ) {
@@ -68,6 +70,8 @@ export class NotificationJobController {
       scheduledAt: string;
       language: 'ALL' | 'ENGLISH' | 'HINDI';
       frequency: 'ONCE' | 'HOURLY' | 'DAILY' | 'WEEKLY' | 'MONTHLY';
+      userIds?: string[] | null;
+      phoneNumbers?: string[];
       filterConditions: any;
       status: string;
     }>,

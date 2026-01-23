@@ -42,3 +42,4 @@ Thumbs.db
 *.db
 *.sqlite
 .vercel
+ssl-certs/

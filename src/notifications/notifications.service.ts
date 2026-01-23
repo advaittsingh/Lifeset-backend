@@ -263,14 +263,15 @@ export class NotificationsService {
   }
 
   async sendNotification(data: {
-    userIds?: string[];
+    userIds?: string[] | null;
     notification: { title: string; body: string };
     data?: Record<string, any>;
     redirectUrl?: string;
     imageUrl?: string;
   }) {
-    if (!data.userIds || data.userIds.length === 0) {
-      // Send to all users if no userIds provided
+    // If userIds is null, undefined, or empty array, broadcast to all users
+    if (data.userIds === null || !data.userIds || data.userIds.length === 0) {
+      // Send to all users if no userIds provided or explicitly null
       return this.pushNotificationService.sendPushNotificationToAll({
         title: data.notification.title,
         body: data.notification.body,

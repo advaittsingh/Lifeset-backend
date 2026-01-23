@@ -15,9 +15,7 @@ Complete AWS deployment setup for the LifeSet platform including backend API, ad
 
 3. **Node.js 20.x** installed
 
-### Quick Deployment Options
-
-#### ECS Deployment (Containerized)
+### One-Command Deployment (Backend)
 
 ```bash
 cd lifeset-backend/aws/scripts
@@ -30,22 +28,6 @@ This will:
 2. Create secrets in AWS Secrets Manager
 3. Build and push Docker image to ECR
 4. Deploy ECS service
-
-#### EC2 Deployment (Traditional Server)
-
-```bash
-cd lifeset-backend/aws/scripts
-export DB_PASSWORD="your_secure_password"
-export EC2_KEY_PAIR="your-key-pair-name"
-
-# Deploy infrastructure and EC2
-./deploy-infrastructure.sh
-./create-secrets.sh
-./deploy-ec2-infrastructure.sh
-./deploy-to-ec2.sh
-```
-
-See [EC2_DEPLOYMENT_GUIDE.md](./EC2_DEPLOYMENT_GUIDE.md) for detailed instructions.
 
 ### Manual Step-by-Step Deployment
 
@@ -111,45 +93,23 @@ CLOUDFRONT_DISTRIBUTION_ID="<YOUR_DIST_ID>" \
 ./deploy-admin-panel.sh
 ```
 
-## Deployment Options
-
-### Option 1: ECS Deployment (Containerized)
-- Scalable containerized deployment
-- Automatic load balancing
-- Best for production with high traffic
-
-See: [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md)
-
-### Option 2: EC2 Deployment (Traditional Server)
-- Full server control
-- Easier debugging with SSH
-- Simpler SSL certificate management
-- Best for simpler deployments
-
-See: [EC2_DEPLOYMENT_GUIDE.md](./EC2_DEPLOYMENT_GUIDE.md)
-
 ## File Structure
 
 ```
 aws/
 ├── infrastructure/
 │   ├── cloudformation.yaml      # Main infrastructure stack
-│   ├── ec2-cloudformation.yaml # EC2 instance template
 │   ├── ecs-task-definition.json  # ECS task definition template
 │   └── ecs-service.json         # ECS service configuration
 ├── scripts/
-│   ├── quick-deploy.sh          # One-command ECS deployment
+│   ├── quick-deploy.sh          # One-command deployment
 │   ├── deploy-infrastructure.sh # Deploy CloudFormation stack
 │   ├── create-secrets.sh        # Create AWS Secrets Manager secrets
-│   ├── add-ssl-certificates.sh  # Add SSL certificates (ECS)
-│   ├── setup-ssl-ec2.sh         # Set up SSL certificates (EC2)
-│   ├── build-and-push-docker.sh # Build and push Docker image (ECS)
+│   ├── add-ssl-certificates.sh  # Add SSL certificates to Secrets Manager
+│   ├── build-and-push-docker.sh # Build and push Docker image
 │   ├── deploy-ecs-service.sh    # Deploy ECS service
-│   ├── deploy-ec2-infrastructure.sh # Deploy EC2 infrastructure
-│   ├── deploy-to-ec2.sh         # Deploy application to EC2
 │   └── prepare-task-definition.sh # Helper script for task definition
-├── DEPLOYMENT_GUIDE.md          # ECS deployment guide
-├── EC2_DEPLOYMENT_GUIDE.md      # EC2 deployment guide
+├── DEPLOYMENT_GUIDE.md          # Detailed deployment guide
 └── README.md                    # This file
 ```
 
