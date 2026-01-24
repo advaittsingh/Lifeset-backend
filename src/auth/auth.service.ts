@@ -690,6 +690,14 @@ export class AuthService {
     // Generate tokens
     const tokens = await this.generateTokens(user);
 
+    // Store session (multi-device support). Session DB enables refresh/validate without "session expired".
+    // Don't fail OTP verification if session creation fails.
+    try {
+      await this.createSession(user.id, tokens.accessToken, tokens.refreshToken);
+    } catch (error: any) {
+      this.logger.warn(`Failed to create session for user ${user.id}: ${error.message}. OTP verification will continue.`);
+    }
+
     // Return user object and tokens with new user detection flags
     // Flags are included at both root level and data level for maximum compatibility
     const response = {
